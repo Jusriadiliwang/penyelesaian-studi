@@ -71,7 +71,8 @@ function App() {
   const [taskName, setTaskName] = useState("");
   const [taskStatus, setTaskStatus] = useState("belum");
   const [taskNote, setTaskNote] = useState("");
-  const [taskPhoto, setTaskPhoto] = useState("");
+  const [taskFile, setTaskFile] = useState(null);
+  const [taskFilePreview, setTaskFilePreview] = useState("");
 
   const [scheduleKode, setScheduleKode] = useState(daftarMataKuliahAwal[0].kode);
   const [scheduleHari, setScheduleHari] = useState("Senin");
@@ -326,85 +327,132 @@ function App() {
   }
 
   async function handlePhotoUpload(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const file = e.target.files?.[0];
+  if (!file) return;
 
-    if (file.size > 900 * 1024) {
-      alert("Ukuran foto terlalu besar. Maksimal 900 KB.");
-      return;
-    }
+  const maxSize = 8 * 1024 * 1024;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setTaskPhoto(reader.result);
-    };
-    reader.readAsDataURL(file);
+  if (file.size > maxSize) {
+    alert("Ukuran file terlalu besar. Maksimal 8 MB.");
+    return;
   }
+
+  setTaskFile(file);
+
+  if (file.type.startsWith("image/")) {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      setTaskFilePreview(reader.result);
+    };
+
+    reader.readAsDataURL(file);
+  } else {
+    setTaskFilePreview("");
+  }
+}
 
   async function addTask(e) {
-    e.preventDefault();
+  e.preventDefault();
 
-    if (!profile) return;
+  if (!profile) return;
 
-    if (profile.role === "admin") {
-      alert("Admin hanya memantau data. Tugas dibuat oleh mahasiswa.");
-      return;
-    }
-
-    if (!taskName.trim()) {
-      alert("Nama tugas harus diisi.");
-      return;
-    }
-
-    let taskData = {};
-
-    if (taskMode === "matakuliah") {
-      const course = getCourse(taskKode);
-
-      taskData = {
-        user_id: profile.id,
-        kode: course.kode,
-        mata_kuliah: course.nama,
-        sks: course.sks,
-        tugas: taskName,
-        status: taskStatus,
-        catatan: taskNote,
-        foto: taskPhoto,
-      };
-    } else {
-      if (!customTaskTitle.trim()) {
-        alert("Nama kategori tugas lain harus diisi.");
-        return;
-      }
-
-      taskData = {
-        user_id: profile.id,
-        kode: "LAINNYA",
-        mata_kuliah: customTaskTitle,
-        sks: Number(customTaskSks || 0),
-        tugas: taskName,
-        status: taskStatus,
-        catatan: taskNote,
-        foto: taskPhoto,
-      };
-    }
-
-    const { error } = await supabase.from("tasks").insert(taskData);
-
-    if (error) {
-      alert("Gagal menyimpan tugas: " + error.message);
-      return;
-    }
-
-    setTaskName("");
-    setTaskStatus("belum");
-    setTaskNote("");
-    setTaskPhoto("");
-    setCustomTaskTitle("");
-    setCustomTaskSks(0);
-
-    await loadData(profile);
+  if (profile.role === "admin") {
+    alert("Admin hanya memantau data. Tugas dibuat oleh mahasiswa.");
+    return;
   }
+
+  if (!taskName.trim()) {
+    alert("Nama tugas harus diisi.");
+    return;
+  }
+
+  let uploadedFileUrl = "";
+  let uploadedFileName = "";
+  let uploadedFileType = "";
+
+  if (taskFile) {
+    const safeName = taskFile.name.replace(/\s+/g, "-").toLowerCase();
+    const filePath = `${profile.id}/${Date.now()}-${safeName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("student-task-files")
+      .upload(filePath, taskFile);
+
+    if (uploadError) {
+      alert("Gagal upload file tugas: " + uploadError.message);
+      return;
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from("student-task-files")
+      .getPublicUrl(filePath);
+
+    uploadedFileUrl = publicUrlData.publicUrl;
+    uploadedFileName = taskFile.name;
+    uploadedFileType = taskFile.type || "file";
+  }
+
+  let taskData = {};
+
+  if (taskMode === "matakuliah") {
+    const course = getCourse(taskKode);
+
+    taskData = {
+      user_id: profile.id,
+      kode: course.kode,
+      mata_kuliah: course.nama,
+      sks: course.sks,
+      tugas: taskName,
+      nama_tugas: taskName,
+      status: taskStatus,
+      catatan: taskNote,
+      foto: uploadedFileUrl,
+      file_url: uploadedFileUrl,
+      file_name: uploadedFileName,
+      file_type: uploadedFileType,
+    };
+  } else {
+    if (!customTaskTitle.trim()) {
+      alert("Nama kategori tugas lain harus diisi.");
+      return;
+    }
+
+    taskData = {
+      user_id: profile.id,
+      kode: "LAINNYA",
+      mata_kuliah: customTaskTitle,
+      sks: Number(customTaskSks || 0),
+      tugas: taskName,
+      nama_tugas: taskName,
+      status: taskStatus,
+      catatan: taskNote,
+      foto: uploadedFileUrl,
+      file_url: uploadedFileUrl,
+      file_name: uploadedFileName,
+      file_type: uploadedFileType,
+    };
+  }
+
+  const { error } = await supabase.from("tasks").insert(taskData);
+
+  if (error) {
+    alert("Gagal menyimpan tugas: " + error.message);
+    return;
+  }
+
+  alert("Tugas berhasil dikirim ke admin.");
+
+  setTaskName("");
+  setTaskStatus("belum");
+  setTaskNote("");
+  setTaskFile(null);
+  setTaskFilePreview("");
+  setCustomTaskTitle("");
+  setCustomTaskSks(0);
+
+  await loadData(profile);
+}
 
   async function updateTaskStatus(id, status) {
     const { error } = await supabase
@@ -609,31 +657,50 @@ function App() {
 
   function exportPdf() {
   const gambarDariTugas = tasks
-    .filter((item) => item.file_url && item.file_type?.startsWith("image/"))
+    .filter((item) => {
+      const url = item.file_url || item.foto || "";
+      const type = item.file_type || "";
+
+      return (
+        url &&
+        (
+          type.startsWith("image/") ||
+          url.startsWith("data:image") ||
+          url.includes(".jpg") ||
+          url.includes(".jpeg") ||
+          url.includes(".png") ||
+          url.includes(".webp")
+        )
+      );
+    })
     .map((item) => ({
       judul: item.tugas || item.nama_tugas || "Gambar Tugas",
       deskripsi: item.catatan || "-",
       sumber: item.mata_kuliah || "-",
-      url: item.file_url,
+      url: item.file_url || item.foto,
     }));
 
-  const gambarDariAdmin = materials
-    .filter((item) => item.file_url && item.file_type?.startsWith("image/"))
+  const filePdfDariTugas = tasks
+    .filter((item) => {
+      const url = item.file_url || "";
+      const type = item.file_type || "";
+
+      return url && (type === "application/pdf" || url.includes(".pdf"));
+    })
     .map((item) => ({
-      judul: item.title || "File dari Admin",
-      deskripsi: item.description || "-",
-      sumber: "File Tugas Admin",
+      judul: item.tugas || item.nama_tugas || "PDF Tugas",
+      deskripsi: item.catatan || "-",
+      sumber: item.mata_kuliah || "-",
+      namaFile: item.file_name || "File PDF",
       url: item.file_url,
     }));
 
-  const gambarTugas = [...gambarDariTugas, ...gambarDariAdmin];
-
-  if (gambarTugas.length === 0) {
-    alert("Belum ada gambar yang diupload. PDF hanya dibuat dari file gambar/foto.");
+  if (gambarDariTugas.length === 0 && filePdfDariTugas.length === 0) {
+    alert("Belum ada gambar atau PDF yang dikirim mahasiswa.");
     return;
   }
 
-  const htmlGambar = gambarTugas
+  const htmlGambar = gambarDariTugas
     .map((item, index) => {
       return `
         <div class="pdfImageCard">
@@ -647,13 +714,28 @@ function App() {
     })
     .join("");
 
+  const htmlPdf = filePdfDariTugas
+    .map((item, index) => {
+      return `
+        <div class="pdfFileCard">
+          <h2>PDF ${index + 1}</h2>
+          <p><b>Judul:</b> ${item.judul}</p>
+          <p><b>Sumber:</b> ${item.sumber}</p>
+          <p><b>Deskripsi:</b> ${item.deskripsi}</p>
+          <p><b>Nama file:</b> ${item.namaFile}</p>
+          <p><b>Link:</b> ${item.url}</p>
+        </div>
+      `;
+    })
+    .join("");
+
   const printWindow = window.open("", "_blank");
 
   printWindow.document.write(`
     <!DOCTYPE html>
     <html>
       <head>
-        <title>PDF Gambar Tugas</title>
+        <title>Laporan File Tugas</title>
         <style>
           body {
             font-family: Arial, sans-serif;
@@ -667,7 +749,8 @@ function App() {
             margin-bottom: 24px;
           }
 
-          .pdfImageCard {
+          .pdfImageCard,
+          .pdfFileCard {
             page-break-inside: avoid;
             border: 1px solid #d1d5db;
             border-radius: 12px;
@@ -675,14 +758,11 @@ function App() {
             margin-bottom: 24px;
           }
 
-          .pdfImageCard h2 {
-            margin: 0 0 10px;
-            font-size: 20px;
-          }
-
-          .pdfImageCard p {
+          .pdfImageCard p,
+          .pdfFileCard p {
             margin: 6px 0;
             font-size: 14px;
+            word-break: break-word;
           }
 
           .pdfImageCard img {
@@ -702,20 +782,43 @@ function App() {
           }
         </style>
       </head>
+
       <body>
-        <h1>Laporan Gambar Tugas</h1>
+        <h1>Laporan File Tugas Mahasiswa</h1>
         ${htmlGambar}
+
+        ${
+          filePdfDariTugas.length > 0
+            ? `<h1>Daftar PDF Tugas</h1>${htmlPdf}`
+            : ""
+        }
+
         <div class="footer">jusry 30-05-2026</div>
+
+        <script>
+          const images = Array.from(document.images);
+
+          Promise.all(
+            images.map((img) => {
+              if (img.complete) return Promise.resolve();
+
+              return new Promise((resolve) => {
+                img.onload = resolve;
+                img.onerror = resolve;
+              });
+            })
+          ).then(() => {
+            setTimeout(() => {
+              window.focus();
+              window.print();
+            }, 500);
+          });
+        </script>
       </body>
     </html>
   `);
 
   printWindow.document.close();
-
-  setTimeout(() => {
-    printWindow.focus();
-    printWindow.print();
-  }, 700);
 }
 
   if (loading) {
@@ -1074,11 +1177,23 @@ function App() {
 
                 <label className="uploadBox">
                   <Upload size={18} />
-                  Upload foto bukti / catatan
-                  <input type="file" accept="image/*" onChange={handlePhotoUpload} hidden />
+                  {taskFile ? taskFile.name : "Upload foto / PDF / file tugas untuk admin"}
+                  <input
+                    type="file"
+                    accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.zip,.rar"
+                    onChange={handlePhotoUpload}
+                    hidden
+                  />
                 </label>
 
-                {taskPhoto && <img src={taskPhoto} alt="Preview bukti" className="previewImage" />}
+                {taskFilePreview && (
+                  <img
+                    src={taskFilePreview}
+                    alt="Preview bukti"
+                    className="previewImage"
+                    loading="lazy"
+                  />
+                )}
 
                 {taskMode === "matakuliah" && (
                   <div className="courseInfo">
@@ -1366,7 +1481,37 @@ function TaskList({
                 </p>
               )}
 
-              {item.foto && <img src={item.foto} alt="Bukti tugas" className="proofImage" />}
+              {item.file_type?.startsWith("image/") && item.file_url && (
+                <img
+                  src={item.file_url}
+                  alt="Bukti tugas"
+                  className="proofImage"
+                  loading="lazy"
+                />
+              )}
+
+              {item.file_url && (
+                <div className="fileBox">
+                  <p>
+                    <b>File:</b> {item.file_name || "File tugas"}
+                  </p>
+
+                  <p>
+                    <b>Tipe:</b> {item.file_type || "-"}
+                  </p>
+
+                  <a
+                    className="downloadBtn"
+                    href={item.file_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    download
+                  >
+                    <Download size={16} />
+                    Download File
+                  </a>
+                </div>
+              )}
 
               <div className="actionRow">
                 {profile.role === "mahasiswa" && (
@@ -1472,6 +1617,7 @@ function MaterialList({ data, profile, onDelete }) {
                   src={item.file_url}
                   alt={item.title}
                   className="proofImage"
+                  loading="lazy"
                 />
               )}
 
