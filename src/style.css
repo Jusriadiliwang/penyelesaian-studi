@@ -895,3 +895,214 @@ textarea:focus {
     grid-template-columns: 1fr 1fr;
   }
 }
+/* =========================
+   MOBILE FIX FINAL
+========================= */
+
+@media (max-width: 600px) {
+  body {
+    background: #eaf2ff;
+  }
+
+  .page {
+    width: 100%;
+    padding: 0 12px 40px;
+  }
+
+  .hero {
+    margin: 0 -12px 18px;
+    border-radius: 0 0 24px 24px;
+    padding: 26px 22px;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .hero h1 {
+    font-size: 34px;
+    line-height: 1.12;
+    letter-spacing: -0.5px;
+  }
+
+  .hero p {
+    font-size: 16px;
+    line-height: 1.5;
+  }
+
+  .heroActions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+    gap: 12px;
+  }
+
+  .heroActions button {
+    width: 100%;
+    padding: 14px 10px;
+    font-size: 16px;
+    border-radius: 16px;
+  }
+
+  .statsGrid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    margin: 16px 0;
+  }
+
+  .statCard {
+    padding: 22px;
+    border-radius: 22px;
+    min-height: 120px;
+  }
+
+  .statCard p {
+    font-size: 16px;
+  }
+
+  .statCard h2 {
+    font-size: 44px;
+  }
+
+  .card {
+    margin-top: 16px;
+    padding: 22px 18px;
+    border-radius: 22px;
+  }
+
+  .card h2 {
+    font-size: 28px;
+    line-height: 1.25;
+  }
+
+  .progressHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .progressHeader span {
+    font-size: 15px;
+  }
+
+  .chartBlock {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+
+  .donut {
+    width: 190px;
+    height: 190px;
+  }
+
+  .donut > div {
+    width: 116px;
+    height: 116px;
+  }
+
+  .donut b {
+    font-size: 36px;
+  }
+
+  .bars {
+    gap: 20px;
+  }
+
+  .progressLineTop {
+    font-size: 16px;
+  }
+
+  .menuTabs,
+  .fourTabs {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .menuTabs button {
+    padding: 18px;
+    font-size: 18px;
+    border-radius: 20px;
+  }
+
+  .listGrid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  .tableCard {
+    padding: 18px;
+    border-radius: 22px;
+  }
+
+  .tableHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .sectionTitle h2,
+  .sectionTitle.small h2 {
+    font-size: 26px;
+    line-height: 1.25;
+  }
+
+  .scheduleGrid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .scheduleCard,
+  .taskCard {
+    padding: 18px;
+    border-radius: 20px;
+  }
+
+  .scheduleCard h3,
+  .taskCard h3 {
+    font-size: 22px;
+    line-height: 1.25;
+  }
+
+  .scheduleCard p,
+  .taskCard p {
+    font-size: 16px;
+    line-height: 1.55;
+  }
+
+  .downloadBtn,
+  .dangerBtn,
+  .softBtn {
+    width: 100%;
+    padding: 14px;
+    font-size: 16px;
+    border-radius: 16px;
+  }
+
+  .actionRow {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+    padding: 15px;
+    border-radius: 16px;
+  }
+
+  .formGrid {
+    gap: 14px;
+  }
+
+  .twoCols {
+    grid-template-columns: 1fr;
+  }
+
+  .proofImage,
+  .previewImage {
+    max-height: 230px;
+    border-radius: 16px;
+  }
+
+  .footerCredit {
+    font-size: 13px;
+    padding: 20px 0;
+  }
+}
