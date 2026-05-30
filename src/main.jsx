@@ -608,25 +608,115 @@ function App() {
   const sksPercent = totalSks === 0 ? 0 : Math.round((doneSks / totalSks) * 100);
 
   function exportPdf() {
-    const printContent = document.getElementById("printArea");
-    const originalContent = document.body.innerHTML;
+  const gambarDariTugas = tasks
+    .filter((item) => item.file_url && item.file_type?.startsWith("image/"))
+    .map((item) => ({
+      judul: item.tugas || item.nama_tugas || "Gambar Tugas",
+      deskripsi: item.catatan || "-",
+      sumber: item.mata_kuliah || "-",
+      url: item.file_url,
+    }));
 
-    document.body.innerHTML = printContent.innerHTML;
-    window.print();
-    document.body.innerHTML = originalContent;
-    window.location.reload();
+  const gambarDariAdmin = materials
+    .filter((item) => item.file_url && item.file_type?.startsWith("image/"))
+    .map((item) => ({
+      judul: item.title || "File dari Admin",
+      deskripsi: item.description || "-",
+      sumber: "File Tugas Admin",
+      url: item.file_url,
+    }));
+
+  const gambarTugas = [...gambarDariTugas, ...gambarDariAdmin];
+
+  if (gambarTugas.length === 0) {
+    alert("Belum ada gambar yang diupload. PDF hanya dibuat dari file gambar/foto.");
+    return;
   }
 
-  if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
-    return (
-      <div className="authPage">
-        <div className="authCard">
-          <h1>Konfigurasi Supabase belum ada</h1>
-          <p>Buat file <b>.env</b>, lalu isi VITE_SUPABASE_URL dan VITE_SUPABASE_ANON_KEY.</p>
+  const htmlGambar = gambarTugas
+    .map((item, index) => {
+      return `
+        <div class="pdfImageCard">
+          <h2>Gambar ${index + 1}</h2>
+          <p><b>Judul:</b> ${item.judul}</p>
+          <p><b>Sumber:</b> ${item.sumber}</p>
+          <p><b>Deskripsi:</b> ${item.deskripsi}</p>
+          <img src="${item.url}" />
         </div>
-      </div>
-    );
-  }
+      `;
+    })
+    .join("");
+
+  const printWindow = window.open("", "_blank");
+
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>PDF Gambar Tugas</title>
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            background: white;
+            color: #111827;
+            padding: 24px;
+          }
+
+          h1 {
+            text-align: center;
+            margin-bottom: 24px;
+          }
+
+          .pdfImageCard {
+            page-break-inside: avoid;
+            border: 1px solid #d1d5db;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 24px;
+          }
+
+          .pdfImageCard h2 {
+            margin: 0 0 10px;
+            font-size: 20px;
+          }
+
+          .pdfImageCard p {
+            margin: 6px 0;
+            font-size: 14px;
+          }
+
+          .pdfImageCard img {
+            width: 100%;
+            max-height: 850px;
+            object-fit: contain;
+            margin-top: 14px;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+          }
+
+          .footer {
+            text-align: center;
+            margin-top: 30px;
+            font-size: 12px;
+            color: #64748b;
+          }
+        </style>
+      </head>
+      <body>
+        <h1>Laporan Gambar Tugas</h1>
+        ${htmlGambar}
+        <div class="footer">jusry 30-05-2026</div>
+      </body>
+    </html>
+  `);
+
+  printWindow.document.close();
+
+  setTimeout(() => {
+    printWindow.focus();
+    printWindow.print();
+  }, 700);
+}
 
   if (loading) {
     return <div className="loading">Memuat profil pengguna...</div>;
