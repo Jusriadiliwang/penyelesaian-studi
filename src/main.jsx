@@ -14,6 +14,7 @@ import {
   LogOut,
   Plus,
   Save,
+  Send,
   ShieldCheck,
   Trash2,
   Upload,
@@ -47,6 +48,7 @@ function App() {
   const [profile, setProfile] = useState(null);
   const [authMode, setAuthMode] = useState("mahasiswa");
   const [loading, setLoading] = useState(true);
+  const [menuLoading, setMenuLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
 
   const [loginEmail, setLoginEmail] = useState("");
@@ -98,23 +100,25 @@ function App() {
       if (newSession?.user) {
         loadProfile(newSession.user);
       } else {
-        setProfile(null);
-        setTasks([]);
-        setSchedules([]);
-        setMaterials([]);
-        setStudents([]);
+        clearAllData();
         setLoading(false);
       }
     });
 
-    return () => {
-      data.subscription.unsubscribe();
-    };
+    return () => data.subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!profile) return;
+
+    if (activeMenu === "tugas") loadTasks(profile);
+    if (activeMenu === "jadwal") loadSchedules(profile);
+    if (activeMenu === "file") loadMaterials();
+    if (activeMenu === "mahasiswa" && profile.role === "admin") loadStudents();
+  }, [activeMenu, selectedStudentId, profile?.id]);
 
   async function initAuth() {
     setLoading(true);
-
     const { data } = await supabase.auth.getSession();
     setSession(data.session);
 
@@ -125,23 +129,59 @@ function App() {
     }
   }
 
+  function clearAllData() {
+    setProfile(null);
+    setTasks([]);
+    setSchedules([]);
+    setMaterials([]);
+    setStudents([]);
+    setLoginEmail("");
+    setLoginPassword("");
+  }
+
   async function loadProfile(user) {
     setLoading(true);
 
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from("profiles")
       .select("*")
       .eq("id", user.id)
       .single();
 
     if (error || !data) {
-      setAuthMessage("Profil pengguna belum ditemukan. Pastikan supabase-schema.sql sudah dijalankan.");
-      setLoading(false);
-      return;
+      const newProfile = {
+        id: user.id,
+        nama: user.user_metadata?.nama || "Mahasiswa",
+        nim: user.user_metadata?.nim || "-",
+        email: user.email,
+        role: user.user_metadata?.role || "mahasiswa",
+        last_login: new Date().toISOString(),
+      };
+
+      const { data: createdProfile, error: createError } = await supabase
+        .from("profiles")
+        .insert(newProfile)
+        .select()
+        .single();
+
+      if (createError) {
+        setAuthMessage("Profil belum tersedia. Silakan coba login ulang atau hubungi admin.");
+        setLoading(false);
+        return;
+      }
+
+      data = createdProfile;
     }
 
     setProfile(data);
-    await loadData(data);
+
+    await updateLastLogin(user.id);
+
+    if (data.role === "admin") {
+      await loadStudents();
+    }
+
+    await loadTasks(data);
     setLoading(false);
   }
 
@@ -152,67 +192,84 @@ function App() {
       .eq("id", userId);
   }
 
-  async function loadData(currentProfile = profile) {
-    if (!currentProfile) return;
+  async function loadStudents() {
+    const { data } = await supabase
+      .from("profiles")
+      .select("*")
+      .order("created_at", { ascending: false });
 
-    const { data: materialData } = await supabase
+    setStudents(data || []);
+  }
+
+  async function loadTasks(currentProfile = profile) {
+    if (!currentProfile) return;
+    setMenuLoading(true);
+
+    let query = supabase
+      .from("tasks")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (currentProfile.role === "admin") {
+      query = query.eq("dikirim_admin", true);
+      if (selectedStudentId !== "all") query = query.eq("user_id", selectedStudentId);
+    } else {
+      query = query.eq("user_id", currentProfile.id);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error(error);
+      alert("Gagal memuat tugas: " + error.message);
+    }
+
+    setTasks(data || []);
+    setMenuLoading(false);
+  }
+
+  async function loadSchedules(currentProfile = profile) {
+    if (!currentProfile) return;
+    setMenuLoading(true);
+
+    let query = supabase
+      .from("schedules")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (currentProfile.role === "admin") {
+      if (selectedStudentId !== "all") query = query.eq("user_id", selectedStudentId);
+    } else {
+      query = query.eq("user_id", currentProfile.id);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error(error);
+      alert("Gagal memuat jadwal: " + error.message);
+    }
+
+    setSchedules(data || []);
+    setMenuLoading(false);
+  }
+
+  async function loadMaterials() {
+    setMenuLoading(true);
+
+    const { data, error } = await supabase
       .from("materials")
       .select("*")
       .order("created_at", { ascending: false });
 
-    setMaterials(materialData || []);
-
-    if (currentProfile.role === "admin") {
-      const { data: studentData } = await supabase
-        .from("profiles")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      setStudents(studentData || []);
-
-      let taskQuery = supabase
-        .from("tasks")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      let scheduleQuery = supabase
-        .from("schedules")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (selectedStudentId !== "all") {
-        taskQuery = taskQuery.eq("user_id", selectedStudentId);
-        scheduleQuery = scheduleQuery.eq("user_id", selectedStudentId);
-      }
-
-      const { data: taskData } = await taskQuery;
-      const { data: scheduleData } = await scheduleQuery;
-
-      setTasks(taskData || []);
-      setSchedules(scheduleData || []);
-    } else {
-      const { data: taskData } = await supabase
-        .from("tasks")
-        .select("*")
-        .eq("user_id", currentProfile.id)
-        .order("created_at", { ascending: false });
-
-      const { data: scheduleData } = await supabase
-        .from("schedules")
-        .select("*")
-        .eq("user_id", currentProfile.id)
-        .order("created_at", { ascending: true });
-
-      setTasks(taskData || []);
-      setSchedules(scheduleData || []);
+    if (error) {
+      console.error(error);
+      alert("Gagal memuat file tugas admin: " + error.message);
     }
+
+    setMaterials(data || []);
+    setMenuLoading(false);
   }
-
-  useEffect(() => {
-    if (profile?.role === "admin") {
-      loadData(profile);
-    }
-  }, [selectedStudentId]);
 
   async function handleRegister(e) {
     e.preventDefault();
@@ -251,6 +308,7 @@ function App() {
   async function handleLogin(e) {
     e.preventDefault();
     setAuthMessage("");
+    setLoading(true);
 
     const { data, error } = await supabase.auth.signInWithPassword({
       email: loginEmail,
@@ -259,6 +317,7 @@ function App() {
 
     if (error) {
       setAuthMessage(error.message);
+      setLoading(false);
       return;
     }
 
@@ -269,43 +328,65 @@ function App() {
       .single();
 
     if (profileError || !profileData) {
-      setAuthMessage("Profil tidak ditemukan. Jalankan supabase-schema.sql terlebih dahulu.");
-      await supabase.auth.signOut();
+      const newProfile = {
+        id: data.user.id,
+        nama: data.user.user_metadata?.nama || "Mahasiswa",
+        nim: data.user.user_metadata?.nim || "-",
+        email: data.user.email,
+        role: data.user.user_metadata?.role || "mahasiswa",
+        last_login: new Date().toISOString(),
+      };
+
+      const { data: createdProfile, error: createProfileError } = await supabase
+        .from("profiles")
+        .insert(newProfile)
+        .select()
+        .single();
+
+      if (createProfileError) {
+        setAuthMessage("Profil gagal dibuat otomatis: " + createProfileError.message);
+        await supabase.auth.signOut();
+        setLoading(false);
+        return;
+      }
+
+      setProfile(createdProfile);
+      await loadTasks(createdProfile);
+      setLoading(false);
       return;
     }
 
     if (authMode === "admin" && profileData.role !== "admin") {
       setAuthMessage("Akun ini bukan admin. Silakan login sebagai mahasiswa.");
       await supabase.auth.signOut();
+      setLoading(false);
       return;
     }
 
     if (authMode === "mahasiswa" && profileData.role === "admin") {
       setAuthMessage("Akun ini adalah admin. Silakan login melalui menu Admin.");
       await supabase.auth.signOut();
+      setLoading(false);
       return;
     }
 
     await updateLastLogin(data.user.id);
 
-    setProfile({
+    const updatedProfile = {
       ...profileData,
       last_login: new Date().toISOString(),
-    });
+    };
 
-    await loadData(profileData);
+    setProfile(updatedProfile);
+
+    if (updatedProfile.role === "admin") await loadStudents();
+    await loadTasks(updatedProfile);
+    setLoading(false);
   }
 
   async function logout() {
     await supabase.auth.signOut();
-    setSession(null);
-    setProfile(null);
-    setTasks([]);
-    setSchedules([]);
-    setMaterials([]);
-    setStudents([]);
-    setLoginEmail("");
-    setLoginPassword("");
+    clearAllData();
   }
 
   function getStudentName(userId) {
@@ -327,145 +408,142 @@ function App() {
   }
 
   async function handlePhotoUpload(e) {
-  const file = e.target.files?.[0];
-  if (!file) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  const maxSize = 8 * 1024 * 1024;
+    const maxSize = 8 * 1024 * 1024;
 
-  if (file.size > maxSize) {
-    alert("Ukuran file terlalu besar. Maksimal 8 MB.");
-    return;
+    if (file.size > maxSize) {
+      alert("Ukuran file terlalu besar. Maksimal 8 MB.");
+      return;
+    }
+
+    setTaskFile(file);
+
+    if (file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = () => setTaskFilePreview(reader.result);
+      reader.readAsDataURL(file);
+    } else {
+      setTaskFilePreview("");
+    }
   }
 
-  setTaskFile(file);
+  async function addTask(e, modeSimpan = "akun") {
+    e.preventDefault();
 
-  if (file.type.startsWith("image/")) {
-    const reader = new FileReader();
+    if (!profile) return;
 
-    reader.onload = () => {
-      setTaskFilePreview(reader.result);
+    if (profile.role === "admin") {
+      alert("Admin hanya memantau data. Tugas dibuat oleh mahasiswa.");
+      return;
+    }
+
+    if (!taskName.trim()) {
+      alert("Nama tugas harus diisi.");
+      return;
+    }
+
+    if (taskMode === "lainnya" && !customTaskTitle.trim()) {
+      alert("Nama tugas lain harus diisi.");
+      return;
+    }
+
+    let uploadedFileUrl = "";
+    let uploadedFileName = "";
+    let uploadedFileType = "";
+
+    if (taskFile) {
+      const safeName = taskFile.name.replace(/\s+/g, "-").toLowerCase();
+      const filePath = `${profile.id}/${Date.now()}-${safeName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("student-task-files")
+        .upload(filePath, taskFile);
+
+      if (uploadError) {
+        alert("Gagal upload file tugas: " + uploadError.message);
+        return;
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from("student-task-files")
+        .getPublicUrl(filePath);
+
+      uploadedFileUrl = publicUrlData.publicUrl;
+      uploadedFileName = taskFile.name;
+      uploadedFileType = taskFile.type || "file";
+    }
+
+    const isKirimAdmin = modeSimpan === "admin";
+    const course = taskMode === "matakuliah" ? getCourse(taskKode) : null;
+
+    const taskData = {
+      user_id: profile.id,
+      kode: taskMode === "matakuliah" ? course.kode : "LAINNYA",
+      mata_kuliah: taskMode === "matakuliah" ? course.nama : customTaskTitle,
+      sks: taskMode === "matakuliah" ? course.sks : Number(customTaskSks || 0),
+      tugas: taskName,
+      nama_tugas: taskName,
+      status: taskStatus,
+      catatan: taskNote,
+      foto: uploadedFileUrl,
+      file_url: uploadedFileUrl,
+      file_name: uploadedFileName,
+      file_type: uploadedFileType,
+      dikirim_admin: isKirimAdmin,
+      jenis_simpan: modeSimpan,
+      tanggal_kirim: isKirimAdmin ? new Date().toISOString() : null,
     };
 
-    reader.readAsDataURL(file);
-  } else {
+    const { error } = await supabase.from("tasks").insert(taskData);
+
+    if (error) {
+      alert("Gagal menyimpan tugas: " + error.message);
+      return;
+    }
+
+    alert(isKirimAdmin ? "Tugas berhasil dikirim ke admin." : "Tugas berhasil disimpan di akun.");
+
+    setTaskName("");
+    setTaskStatus("belum");
+    setTaskNote("");
+    setTaskFile(null);
     setTaskFilePreview("");
-  }
-}
+    setCustomTaskTitle("");
+    setCustomTaskSks(0);
 
-  async function addTask(e) {
-  e.preventDefault();
-
-  if (!profile) return;
-
-  if (profile.role === "admin") {
-    alert("Admin hanya memantau data. Tugas dibuat oleh mahasiswa.");
-    return;
+    await loadTasks(profile);
   }
 
-  if (!taskName.trim()) {
-    alert("Nama tugas harus diisi.");
-    return;
-  }
-
-  let uploadedFileUrl = "";
-  let uploadedFileName = "";
-  let uploadedFileType = "";
-
-  if (taskFile) {
-    const safeName = taskFile.name.replace(/\s+/g, "-").toLowerCase();
-    const filePath = `${profile.id}/${Date.now()}-${safeName}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from("student-task-files")
-      .upload(filePath, taskFile);
-
-    if (uploadError) {
-      alert("Gagal upload file tugas: " + uploadError.message);
-      return;
-    }
-
-    const { data: publicUrlData } = supabase.storage
-      .from("student-task-files")
-      .getPublicUrl(filePath);
-
-    uploadedFileUrl = publicUrlData.publicUrl;
-    uploadedFileName = taskFile.name;
-    uploadedFileType = taskFile.type || "file";
-  }
-
-  let taskData = {};
-
-  if (taskMode === "matakuliah") {
-    const course = getCourse(taskKode);
-
-    taskData = {
-      user_id: profile.id,
-      kode: course.kode,
-      mata_kuliah: course.nama,
-      sks: course.sks,
-      tugas: taskName,
-      nama_tugas: taskName,
-      status: taskStatus,
-      catatan: taskNote,
-      foto: uploadedFileUrl,
-      file_url: uploadedFileUrl,
-      file_name: uploadedFileName,
-      file_type: uploadedFileType,
-    };
-  } else {
-    if (!customTaskTitle.trim()) {
-      alert("Nama kategori tugas lain harus diisi.");
-      return;
-    }
-
-    taskData = {
-      user_id: profile.id,
-      kode: "LAINNYA",
-      mata_kuliah: customTaskTitle,
-      sks: Number(customTaskSks || 0),
-      tugas: taskName,
-      nama_tugas: taskName,
-      status: taskStatus,
-      catatan: taskNote,
-      foto: uploadedFileUrl,
-      file_url: uploadedFileUrl,
-      file_name: uploadedFileName,
-      file_type: uploadedFileType,
-    };
-  }
-
-  const { error } = await supabase.from("tasks").insert(taskData);
-
-  if (error) {
-    alert("Gagal menyimpan tugas: " + error.message);
-    return;
-  }
-
-  alert("Tugas berhasil dikirim ke admin.");
-
-  setTaskName("");
-  setTaskStatus("belum");
-  setTaskNote("");
-  setTaskFile(null);
-  setTaskFilePreview("");
-  setCustomTaskTitle("");
-  setCustomTaskSks(0);
-
-  await loadData(profile);
-}
-
-  async function updateTaskStatus(id, status) {
+  async function sendExistingTaskToAdmin(item) {
     const { error } = await supabase
       .from("tasks")
-      .update({ status })
-      .eq("id", id);
+      .update({
+        dikirim_admin: true,
+        jenis_simpan: "admin",
+        tanggal_kirim: new Date().toISOString(),
+      })
+      .eq("id", item.id);
+
+    if (error) {
+      alert("Gagal mengirim tugas ke admin: " + error.message);
+      return;
+    }
+
+    alert("Tugas berhasil dikirim ke admin.");
+    await loadTasks(profile);
+  }
+
+  async function updateTaskStatus(id, status) {
+    const { error } = await supabase.from("tasks").update({ status }).eq("id", id);
 
     if (error) {
       alert("Gagal mengubah status: " + error.message);
       return;
     }
 
-    await loadData(profile);
+    await loadTasks(profile);
   }
 
   async function deleteTask(id) {
@@ -479,7 +557,7 @@ function App() {
       return;
     }
 
-    await loadData(profile);
+    await loadTasks(profile);
   }
 
   async function addScheduleByAdmin(e) {
@@ -529,7 +607,7 @@ function App() {
     setScheduleDosen("");
     setScheduleCatatan("");
 
-    await loadData(profile);
+    await loadSchedules(profile);
   }
 
   async function deleteSchedule(id) {
@@ -548,7 +626,7 @@ function App() {
       return;
     }
 
-    await loadData(profile);
+    await loadSchedules(profile);
   }
 
   async function uploadMaterialByAdmin(e) {
@@ -605,7 +683,7 @@ function App() {
     setMaterialDescription("");
     setMaterialFile(null);
 
-    await loadData(profile);
+    await loadMaterials();
   }
 
   async function deleteMaterial(id) {
@@ -624,7 +702,7 @@ function App() {
       return;
     }
 
-    await loadData(profile);
+    await loadMaterials();
   }
 
   const filteredTasks = useMemo(() => {
@@ -635,6 +713,7 @@ function App() {
         item.kode?.toLowerCase().includes(keyword) ||
         item.mata_kuliah?.toLowerCase().includes(keyword) ||
         item.tugas?.toLowerCase().includes(keyword) ||
+        item.nama_tugas?.toLowerCase().includes(keyword) ||
         item.catatan?.toLowerCase().includes(keyword)
       );
     });
@@ -652,178 +731,176 @@ function App() {
   const doneSks = tasks
     .filter((item) => item.status === "selesai")
     .reduce((sum, item) => sum + Number(item.sks || 0), 0);
-
   const sksPercent = totalSks === 0 ? 0 : Math.round((doneSks / totalSks) * 100);
 
+  function isImageFile(item) {
+    const url = item.file_url || item.foto || "";
+    const type = item.file_type || "";
+
+    return (
+      url &&
+      (type.startsWith("image/") ||
+        url.startsWith("data:image") ||
+        url.includes(".jpg") ||
+        url.includes(".jpeg") ||
+        url.includes(".png") ||
+        url.includes(".webp"))
+    );
+  }
+
+  function isPdfFile(item) {
+    const url = item.file_url || "";
+    const type = item.file_type || "";
+    return url && (type === "application/pdf" || url.includes(".pdf"));
+  }
+
   function exportPdf() {
-  const gambarDariTugas = tasks
-    .filter((item) => {
-      const url = item.file_url || item.foto || "";
-      const type = item.file_type || "";
+    const gambarDariTugas = tasks
+      .filter((item) => isImageFile(item))
+      .map((item) => ({
+        judul: item.tugas || item.nama_tugas || "Gambar Tugas",
+        deskripsi: item.catatan || "-",
+        sumber: item.mata_kuliah || "-",
+        statusKirim: item.dikirim_admin ? "Sudah dikirim ke admin" : "Tersimpan di akun",
+        url: item.file_url || item.foto,
+      }));
 
-      return (
-        url &&
-        (
-          type.startsWith("image/") ||
-          url.startsWith("data:image") ||
-          url.includes(".jpg") ||
-          url.includes(".jpeg") ||
-          url.includes(".png") ||
-          url.includes(".webp")
-        )
-      );
-    })
-    .map((item) => ({
-      judul: item.tugas || item.nama_tugas || "Gambar Tugas",
-      deskripsi: item.catatan || "-",
-      sumber: item.mata_kuliah || "-",
-      url: item.file_url || item.foto,
-    }));
+    const filePdfDariTugas = tasks
+      .filter((item) => isPdfFile(item))
+      .map((item) => ({
+        judul: item.tugas || item.nama_tugas || "PDF Tugas",
+        deskripsi: item.catatan || "-",
+        sumber: item.mata_kuliah || "-",
+        statusKirim: item.dikirim_admin ? "Sudah dikirim ke admin" : "Tersimpan di akun",
+        namaFile: item.file_name || "File PDF",
+        url: item.file_url,
+      }));
 
-  const filePdfDariTugas = tasks
-    .filter((item) => {
-      const url = item.file_url || "";
-      const type = item.file_type || "";
+    if (gambarDariTugas.length === 0 && filePdfDariTugas.length === 0) {
+      alert("Belum ada gambar atau PDF yang tersimpan.");
+      return;
+    }
 
-      return url && (type === "application/pdf" || url.includes(".pdf"));
-    })
-    .map((item) => ({
-      judul: item.tugas || item.nama_tugas || "PDF Tugas",
-      deskripsi: item.catatan || "-",
-      sumber: item.mata_kuliah || "-",
-      namaFile: item.file_name || "File PDF",
-      url: item.file_url,
-    }));
+    const htmlGambar = gambarDariTugas
+      .map((item, index) => {
+        return `
+          <div class="pdfImageCard">
+            <h2>Gambar ${index + 1}</h2>
+            <p><b>Judul:</b> ${item.judul}</p>
+            <p><b>Sumber:</b> ${item.sumber}</p>
+            <p><b>Status:</b> ${item.statusKirim}</p>
+            <p><b>Deskripsi:</b> ${item.deskripsi}</p>
+            <img src="${item.url}" />
+          </div>
+        `;
+      })
+      .join("");
 
-  if (gambarDariTugas.length === 0 && filePdfDariTugas.length === 0) {
-    alert("Belum ada gambar atau PDF yang dikirim mahasiswa.");
-    return;
+    const htmlPdf = filePdfDariTugas
+      .map((item, index) => {
+        return `
+          <div class="pdfFileCard">
+            <h2>PDF ${index + 1}</h2>
+            <p><b>Judul:</b> ${item.judul}</p>
+            <p><b>Sumber:</b> ${item.sumber}</p>
+            <p><b>Status:</b> ${item.statusKirim}</p>
+            <p><b>Deskripsi:</b> ${item.deskripsi}</p>
+            <p><b>Nama file:</b> ${item.namaFile}</p>
+            <p><b>Link:</b> ${item.url}</p>
+          </div>
+        `;
+      })
+      .join("");
+
+    const printWindow = window.open("", "_blank");
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Laporan File Tugas</title>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              background: white;
+              color: #111827;
+              padding: 24px;
+            }
+            h1 {
+              text-align: center;
+              margin-bottom: 24px;
+            }
+            .pdfImageCard,
+            .pdfFileCard {
+              page-break-inside: avoid;
+              border: 1px solid #d1d5db;
+              border-radius: 12px;
+              padding: 16px;
+              margin-bottom: 24px;
+            }
+            .pdfImageCard p,
+            .pdfFileCard p {
+              margin: 6px 0;
+              font-size: 14px;
+              word-break: break-word;
+            }
+            .pdfImageCard img {
+              width: 100%;
+              max-height: 850px;
+              object-fit: contain;
+              margin-top: 14px;
+              border: 1px solid #e5e7eb;
+              border-radius: 10px;
+            }
+            .footer {
+              text-align: center;
+              margin-top: 30px;
+              font-size: 12px;
+              color: #64748b;
+            }
+          </style>
+        </head>
+        <body>
+          <h1>Laporan File dan Gambar Tugas</h1>
+          ${htmlGambar}
+          ${filePdfDariTugas.length > 0 ? `<h1>Daftar PDF Tugas</h1>${htmlPdf}` : ""}
+          <div class="footer">di buat pada 30-05-2026 if rpl 6-a</div>
+          <script>
+            const images = Array.from(document.images);
+            Promise.all(
+              images.map((img) => {
+                if (img.complete) return Promise.resolve();
+                return new Promise((resolve) => {
+                  img.onload = resolve;
+                  img.onerror = resolve;
+                });
+              })
+            ).then(() => {
+              setTimeout(() => {
+                window.focus();
+                window.print();
+              }, 500);
+            });
+          </script>
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
   }
 
-  const htmlGambar = gambarDariTugas
-    .map((item, index) => {
-      return `
-        <div class="pdfImageCard">
-          <h2>Gambar ${index + 1}</h2>
-          <p><b>Judul:</b> ${item.judul}</p>
-          <p><b>Sumber:</b> ${item.sumber}</p>
-          <p><b>Deskripsi:</b> ${item.deskripsi}</p>
-          <img src="${item.url}" />
+  if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
+    return (
+      <div className="authPage">
+        <div className="authCard">
+          <h1>Konfigurasi Supabase belum ada</h1>
+          <p>Buat file <b>.env</b>, lalu isi VITE_SUPABASE_URL dan VITE_SUPABASE_ANON_KEY.</p>
         </div>
-      `;
-    })
-    .join("");
-
-  const htmlPdf = filePdfDariTugas
-    .map((item, index) => {
-      return `
-        <div class="pdfFileCard">
-          <h2>PDF ${index + 1}</h2>
-          <p><b>Judul:</b> ${item.judul}</p>
-          <p><b>Sumber:</b> ${item.sumber}</p>
-          <p><b>Deskripsi:</b> ${item.deskripsi}</p>
-          <p><b>Nama file:</b> ${item.namaFile}</p>
-          <p><b>Link:</b> ${item.url}</p>
-        </div>
-      `;
-    })
-    .join("");
-
-  const printWindow = window.open("", "_blank");
-
-  printWindow.document.write(`
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>Laporan File Tugas</title>
-        <style>
-          body {
-            font-family: Arial, sans-serif;
-            background: white;
-            color: #111827;
-            padding: 24px;
-          }
-
-          h1 {
-            text-align: center;
-            margin-bottom: 24px;
-          }
-
-          .pdfImageCard,
-          .pdfFileCard {
-            page-break-inside: avoid;
-            border: 1px solid #d1d5db;
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 24px;
-          }
-
-          .pdfImageCard p,
-          .pdfFileCard p {
-            margin: 6px 0;
-            font-size: 14px;
-            word-break: break-word;
-          }
-
-          .pdfImageCard img {
-            width: 100%;
-            max-height: 850px;
-            object-fit: contain;
-            margin-top: 14px;
-            border: 1px solid #e5e7eb;
-            border-radius: 10px;
-          }
-
-          .footer {
-            text-align: center;
-            margin-top: 30px;
-            font-size: 12px;
-            color: #64748b;
-          }
-        </style>
-      </head>
-
-      <body>
-        <h1>Laporan File Tugas Mahasiswa</h1>
-        ${htmlGambar}
-
-        ${
-          filePdfDariTugas.length > 0
-            ? `<h1>Daftar PDF Tugas</h1>${htmlPdf}`
-            : ""
-        }
-
-        <div class="footer">jusry 30-05-2026</div>
-
-        <script>
-          const images = Array.from(document.images);
-
-          Promise.all(
-            images.map((img) => {
-              if (img.complete) return Promise.resolve();
-
-              return new Promise((resolve) => {
-                img.onload = resolve;
-                img.onerror = resolve;
-              });
-            })
-          ).then(() => {
-            setTimeout(() => {
-              window.focus();
-              window.print();
-            }, 500);
-          });
-        </script>
-      </body>
-    </html>
-  `);
-
-  printWindow.document.close();
-}
-
-  if (loading) {
-    return <div className="loading">Memuat profil pengguna...</div>;
+      </div>
+    );
   }
+
+  if (loading) return <div className="loading">Memuat profil pengguna...</div>;
 
   if (!session || !profile) {
     return (
@@ -835,35 +912,13 @@ function App() {
 
         <section className="loginBox">
           <div className="tabRow">
-            <button
-              className={authMode === "mahasiswa" ? "active" : ""}
-              onClick={() => {
-                setAuthMode("mahasiswa");
-                setAuthMessage("");
-              }}
-            >
-              <User size={17} />
-              Mahasiswa
+            <button className={authMode === "mahasiswa" ? "active" : ""} onClick={() => setAuthMode("mahasiswa")}>
+              <User size={17} /> Mahasiswa
             </button>
-
-            <button
-              className={authMode === "admin" ? "active" : ""}
-              onClick={() => {
-                setAuthMode("admin");
-                setAuthMessage("");
-              }}
-            >
-              <ShieldCheck size={17} />
-              Admin
+            <button className={authMode === "admin" ? "active" : ""} onClick={() => setAuthMode("admin")}>
+              <ShieldCheck size={17} /> Admin
             </button>
-
-            <button
-              className={authMode === "registrasi" ? "active" : ""}
-              onClick={() => {
-                setAuthMode("registrasi");
-                setAuthMessage("");
-              }}
-            >
+            <button className={authMode === "registrasi" ? "active" : ""} onClick={() => setAuthMode("registrasi")}>
               Registrasi
             </button>
           </div>
@@ -871,59 +926,18 @@ function App() {
           {authMode === "registrasi" ? (
             <form onSubmit={handleRegister} className="authForm">
               <h2>Registrasi Mahasiswa</h2>
-
-              <input
-                type="text"
-                placeholder="Nama lengkap"
-                value={regNama}
-                onChange={(e) => setRegNama(e.target.value)}
-              />
-
-              <input
-                type="text"
-                placeholder="NIM"
-                value={regNim}
-                onChange={(e) => setRegNim(e.target.value)}
-              />
-
-              <input
-                type="email"
-                placeholder="Email"
-                value={regEmail}
-                onChange={(e) => setRegEmail(e.target.value)}
-              />
-
-              <input
-                type="password"
-                placeholder="Password"
-                value={regPassword}
-                onChange={(e) => setRegPassword(e.target.value)}
-              />
-
+              <input type="text" placeholder="Nama lengkap" value={regNama} onChange={(e) => setRegNama(e.target.value)} />
+              <input type="text" placeholder="NIM" value={regNim} onChange={(e) => setRegNim(e.target.value)} />
+              <input type="email" placeholder="Email" value={regEmail} onChange={(e) => setRegEmail(e.target.value)} />
+              <input type="password" placeholder="Password" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} />
               <button type="submit">Daftar & Kirim Verifikasi</button>
             </form>
           ) : (
             <form onSubmit={handleLogin} className="authForm">
               <h2>{authMode === "admin" ? "Login Admin" : "Login Mahasiswa"}</h2>
-
-              <input
-                type="email"
-                placeholder="Email"
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-              />
-
-              <input
-                type="password"
-                placeholder="Password"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-              />
-
-              <button type="submit">
-                <LogIn size={17} />
-                Login
-              </button>
+              <input type="email" placeholder="Email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} />
+              <input type="password" placeholder="Password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
+              <button type="submit"><LogIn size={17} /> Login</button>
             </form>
           )}
 
@@ -939,21 +953,12 @@ function App() {
         <div>
           <p className="miniLabel">Menu Penyelesaian Studi</p>
           <h1>Checklist Tugas dan Mata Kuliah</h1>
-          <p>
-            Halo, {profile.nama}. Role akun: <b>{profile.role}</b>
-          </p>
+          <p>Halo, {profile.nama}. Role akun: <b>{profile.role}</b></p>
         </div>
 
         <div className="heroActions">
-          <button onClick={exportPdf}>
-            <Download size={17} />
-            PDF
-          </button>
-
-          <button onClick={logout}>
-            <LogOut size={17} />
-            Logout
-          </button>
+          <button onClick={exportPdf}><Download size={17} /> PDF</button>
+          <button onClick={logout}><LogOut size={17} /> Logout</button>
         </div>
       </header>
 
@@ -961,71 +966,22 @@ function App() {
         <>
           <section className="card">
             <h2>Panel Admin</h2>
-            <p>Lihat data semua mahasiswa atau pilih satu mahasiswa.</p>
-
-            <select
-              value={selectedStudentId}
-              onChange={(e) => setSelectedStudentId(e.target.value)}
-            >
+            <p>Lihat tugas yang sudah dikirim mahasiswa ke admin.</p>
+            <select value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)}>
               <option value="all">Semua mahasiswa</option>
-              {students
-                .filter((student) => student.role === "mahasiswa")
-                .map((student) => (
-                  <option key={student.id} value={student.id}>
-                    {student.nama} - {student.nim} - {student.email}
-                  </option>
-                ))}
+              {students.filter((student) => student.role === "mahasiswa").map((student) => (
+                <option key={student.id} value={student.id}>{student.nama} - {student.nim} - {student.email}</option>
+              ))}
             </select>
-          </section>
-
-          <section className="card">
-            <div className="sectionTitle">
-              <Users size={22} />
-              <h2>Daftar Mahasiswa Registrasi</h2>
-            </div>
-
-            {students.filter((student) => student.role === "mahasiswa").length === 0 ? (
-              <p className="empty">Belum ada mahasiswa yang registrasi.</p>
-            ) : (
-              <div className="scheduleGrid">
-                {students
-                  .filter((student) => student.role === "mahasiswa")
-                  .map((student) => (
-                    <div className="scheduleCard" key={student.id}>
-                      <h3>{student.nama}</h3>
-                      <p><b>NIM:</b> {student.nim}</p>
-                      <p><b>Email:</b> {student.email}</p>
-                      <p><b>Role:</b> {student.role}</p>
-                      <p><b>Registrasi:</b> {formatDateTime(student.created_at)}</p>
-                      <p><b>Login Terakhir:</b> {formatDateTime(student.last_login)}</p>
-                    </div>
-                  ))}
-              </div>
-            )}
           </section>
         </>
       )}
 
       <section className="statsGrid">
-        <div className="statCard">
-          <p>Total Tugas</p>
-          <h2>{totalTasks}</h2>
-        </div>
-
-        <div className="statCard">
-          <p>Tugas Selesai</p>
-          <h2>{totalDone}</h2>
-        </div>
-
-        <div className="statCard">
-          <p>Belum Selesai</p>
-          <h2>{totalNotDone}</h2>
-        </div>
-
-        <div className="statCard">
-          <p>Progres SKS</p>
-          <h2>{sksPercent}%</h2>
-        </div>
+        <div className="statCard"><p>Total Tugas</p><h2>{totalTasks}</h2></div>
+        <div className="statCard"><p>Tugas Selesai</p><h2>{totalDone}</h2></div>
+        <div className="statCard"><p>Belum Selesai</p><h2>{totalNotDone}</h2></div>
+        <div className="statCard"><p>Progres SKS</p><h2>{sksPercent}%</h2></div>
       </section>
 
       <section className="card">
@@ -1033,20 +989,10 @@ function App() {
           <h2>Grafik Progres Penyelesaian</h2>
           <span>{percent}% tugas selesai</span>
         </div>
-
         <div className="chartBlock">
-          <div
-            className="donut"
-            style={{
-              background: `conic-gradient(#2563eb ${percent * 3.6}deg, #ffedd5 0deg)`,
-            }}
-          >
-            <div>
-              <b>{percent}%</b>
-              <span>Selesai</span>
-            </div>
+          <div className="donut" style={{ background: `conic-gradient(#2563eb ${percent * 3.6}deg, #ffedd5 0deg)` }}>
+            <div><b>{percent}%</b><span>Selesai</span></div>
           </div>
-
           <div className="bars">
             <ProgressBar label="Selesai" value={totalDone} max={Math.max(totalTasks, 1)} color="#2563eb" suffix={`${totalDone} tugas`} />
             <ProgressBar label="Belum selesai" value={totalNotDone} max={Math.max(totalTasks, 1)} color="#f97316" suffix={`${totalNotDone} tugas`} />
@@ -1056,60 +1002,33 @@ function App() {
       </section>
 
       <div className="menuTabs fourTabs">
-        <button
-          className={activeMenu === "tugas" ? "active" : ""}
-          onClick={() => setActiveMenu("tugas")}
-        >
-          Tugas
-        </button>
-
-        <button
-          className={activeMenu === "jadwal" ? "active" : ""}
-          onClick={() => setActiveMenu("jadwal")}
-        >
-          Jadwal Kuliah
-        </button>
-
-        <button
-          className={activeMenu === "file" ? "active" : ""}
-          onClick={() => setActiveMenu("file")}
-        >
-          File Tugas
-        </button>
-
+        <button className={activeMenu === "tugas" ? "active" : ""} onClick={() => setActiveMenu("tugas")}>Tugas</button>
+        <button className={activeMenu === "jadwal" ? "active" : ""} onClick={() => setActiveMenu("jadwal")}>Jadwal Kuliah</button>
+        <button className={activeMenu === "file" ? "active" : ""} onClick={() => setActiveMenu("file")}>File Tugas</button>
         {profile.role === "admin" && (
-          <button
-            className={activeMenu === "mahasiswa" ? "active" : ""}
-            onClick={() => setActiveMenu("mahasiswa")}
-          >
-            Mahasiswa
-          </button>
+          <button className={activeMenu === "mahasiswa" ? "active" : ""} onClick={() => setActiveMenu("mahasiswa")}>Mahasiswa</button>
         )}
       </div>
 
+      {menuLoading && <div className="message">Memuat data...</div>}
+
       {activeMenu === "mahasiswa" && profile.role === "admin" && (
         <section className="card">
-          <div className="sectionTitle">
-            <Users size={22} />
-            <h2>Daftar Mahasiswa</h2>
-          </div>
-
+          <div className="sectionTitle"><Users size={22} /><h2>Daftar Mahasiswa Registrasi</h2></div>
           {students.filter((student) => student.role === "mahasiswa").length === 0 ? (
             <p className="empty">Belum ada mahasiswa yang registrasi.</p>
           ) : (
             <div className="scheduleGrid">
-              {students
-                .filter((student) => student.role === "mahasiswa")
-                .map((student) => (
-                  <div className="scheduleCard" key={student.id}>
-                    <h3>{student.nama}</h3>
-                    <p><b>NIM:</b> {student.nim}</p>
-                    <p><b>Email:</b> {student.email}</p>
-                    <p><b>Role:</b> {student.role}</p>
-                    <p><b>Registrasi:</b> {formatDateTime(student.created_at)}</p>
-                    <p><b>Login Terakhir:</b> {formatDateTime(student.last_login)}</p>
-                  </div>
-                ))}
+              {students.filter((student) => student.role === "mahasiswa").map((student) => (
+                <div className="scheduleCard" key={student.id}>
+                  <h3>{student.nama}</h3>
+                  <p><b>NIM:</b> {student.nim}</p>
+                  <p><b>Email:</b> {student.email}</p>
+                  <p><b>Role:</b> {student.role}</p>
+                  <p><b>Registrasi:</b> {formatDateTime(student.created_at)}</p>
+                  <p><b>Login Terakhir:</b> {formatDateTime(student.last_login)}</p>
+                </div>
+              ))}
             </div>
           )}
         </section>
@@ -1119,12 +1038,9 @@ function App() {
         <>
           {profile.role === "mahasiswa" && (
             <section className="card">
-              <div className="sectionTitle">
-                <Plus size={22} />
-                <h2>Tambah Tugas</h2>
-              </div>
+              <div className="sectionTitle"><Plus size={22} /><h2>Tambah Tugas</h2></div>
 
-              <form onSubmit={addTask} className="formGrid">
+              <form className="formGrid">
                 <select value={taskMode} onChange={(e) => setTaskMode(e.target.value)}>
                   <option value="matakuliah">Tugas berdasarkan mata kuliah</option>
                   <option value="lainnya">Tugas lain tanpa kode mata kuliah</option>
@@ -1132,121 +1048,56 @@ function App() {
 
                 {taskMode === "matakuliah" ? (
                   <select value={taskKode} onChange={(e) => setTaskKode(e.target.value)}>
-                    {daftarMataKuliahAwal.map((mk) => (
-                      <option key={mk.kode} value={mk.kode}>
-                        {mk.nama}
-                      </option>
-                    ))}
+                    {daftarMataKuliahAwal.map((mk) => <option key={mk.kode} value={mk.kode}>{mk.nama}</option>)}
                   </select>
                 ) : (
                   <>
-                    <input
-                      type="text"
-                      placeholder="Nama tugas lain, contoh: Tugas organisasi, Proposal, Sertifikat"
-                      value={customTaskTitle}
-                      onChange={(e) => setCustomTaskTitle(e.target.value)}
-                    />
-
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="SKS jika ada, isi 0 jika bukan mata kuliah"
-                      value={customTaskSks}
-                      onChange={(e) => setCustomTaskSks(e.target.value)}
-                    />
+                    <input type="text" placeholder="Nama tugas lain, contoh: Proposal, Sertifikat, Organisasi" value={customTaskTitle} onChange={(e) => setCustomTaskTitle(e.target.value)} />
+                    <input type="number" min="0" placeholder="SKS jika ada, isi 0 jika bukan mata kuliah" value={customTaskSks} onChange={(e) => setCustomTaskSks(e.target.value)} />
                   </>
                 )}
 
-                <input
-                  type="text"
-                  placeholder="Nama tugas, contoh: Laporan, PPT, Program, UAS"
-                  value={taskName}
-                  onChange={(e) => setTaskName(e.target.value)}
-                />
+                <input type="text" placeholder="Nama tugas, contoh: Laporan, PPT, Program, UAS" value={taskName} onChange={(e) => setTaskName(e.target.value)} />
 
                 <select value={taskStatus} onChange={(e) => setTaskStatus(e.target.value)}>
                   <option value="belum">Belum Selesai</option>
                   <option value="selesai">Selesai</option>
                 </select>
 
-                <textarea
-                  placeholder="Catatan tugas, contoh: kumpul minggu depan atau revisi BAB 2"
-                  value={taskNote}
-                  onChange={(e) => setTaskNote(e.target.value)}
-                />
+                <textarea placeholder="Catatan tugas" value={taskNote} onChange={(e) => setTaskNote(e.target.value)} />
 
                 <label className="uploadBox">
                   <Upload size={18} />
-                  {taskFile ? taskFile.name : "Upload foto / PDF / file tugas untuk admin"}
-                  <input
-                    type="file"
-                    accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.zip,.rar"
-                    onChange={handlePhotoUpload}
-                    hidden
-                  />
+                  {taskFile ? taskFile.name : "Upload foto / PDF / file tugas"}
+                  <input type="file" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.zip,.rar" onChange={handlePhotoUpload} hidden />
                 </label>
 
-                {taskFilePreview && (
-                  <img
-                    src={taskFilePreview}
-                    alt="Preview bukti"
-                    className="previewImage"
-                    loading="lazy"
-                  />
-                )}
+                {taskFilePreview && <img src={taskFilePreview} alt="Preview bukti" className="previewImage" loading="lazy" />}
 
                 {taskMode === "matakuliah" && (
-                  <div className="courseInfo">
-                    <BookOpen size={18} />
-                    <b>{getCourse(taskKode)?.kode}</b> — {getCourse(taskKode)?.nama} | {getCourse(taskKode)?.sks} SKS
-                  </div>
+                  <div className="courseInfo"><BookOpen size={18} /><b>{getCourse(taskKode)?.kode}</b> — {getCourse(taskKode)?.nama} | {getCourse(taskKode)?.sks} SKS</div>
                 )}
 
-                <button type="submit">
-                  <Save size={17} />
-                  Simpan Tugas
-                </button>
+                <div className="twoCols">
+                  <button type="button" onClick={(e) => addTask(e, "akun")}><Save size={17} /> Simpan di Akun</button>
+                  <button type="button" onClick={(e) => addTask(e, "admin")}><Send size={17} /> Kirim ke Admin</button>
+                </div>
               </form>
             </section>
           )}
 
           {profile.role === "admin" && (
             <section className="card adminInfo">
-              <h2>Mode Admin</h2>
-              <p>
-                Admin dapat memantau tugas mahasiswa, tetapi tugas dibuat oleh mahasiswa masing-masing.
-                Untuk jadwal kuliah, admin dapat mengirim jadwal melalui menu <b>Jadwal Kuliah</b>.
-              </p>
+              <h2>Tugas Masuk dari Mahasiswa</h2>
+              <p>Admin hanya melihat tugas yang sudah dikirim mahasiswa melalui tombol <b>Kirim ke Admin</b>.</p>
             </section>
           )}
 
-          <input
-            className="searchInput"
-            placeholder="Cari kode, mata kuliah, atau nama tugas..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          <input className="searchInput" placeholder="Cari kode, mata kuliah, atau nama tugas..." value={search} onChange={(e) => setSearch(e.target.value)} />
 
           <section className="listGrid">
-            <TaskList
-              title="Daftar Tugas Belum Selesai"
-              data={tasksNotDone}
-              profile={profile}
-              getStudentName={getStudentName}
-              onStatus={updateTaskStatus}
-              onDelete={deleteTask}
-              targetStatus="selesai"
-            />
-
-            <TaskList
-              title="Daftar Tugas Selesai"
-              data={tasksDone}
-              profile={profile}
-              getStudentName={getStudentName}
-              onStatus={updateTaskStatus}
-              onDelete={deleteTask}
-              targetStatus="belum"
-            />
+            <TaskList title="Daftar Tugas Belum Selesai" data={tasksNotDone} profile={profile} getStudentName={getStudentName} onStatus={updateTaskStatus} onDelete={deleteTask} onSendAdmin={sendExistingTaskToAdmin} targetStatus="selesai" />
+            <TaskList title="Daftar Tugas Selesai" data={tasksDone} profile={profile} getStudentName={getStudentName} onStatus={updateTaskStatus} onDelete={deleteTask} onSendAdmin={sendExistingTaskToAdmin} targetStatus="belum" />
           </section>
         </>
       )}
@@ -1255,87 +1106,32 @@ function App() {
         <>
           {profile.role === "admin" && (
             <section className="card">
-              <div className="sectionTitle">
-                <CalendarDays size={22} />
-                <h2>Kirim Jadwal Kuliah ke Semua Mahasiswa</h2>
-              </div>
-
-              <p className="hint">
-                Jadwal hanya bisa dibuat oleh admin dan akan dikirim otomatis ke semua mahasiswa yang terdaftar.
-              </p>
-
+              <div className="sectionTitle"><CalendarDays size={22} /><h2>Kirim Jadwal Kuliah ke Semua Mahasiswa</h2></div>
+              <p className="hint">Jadwal hanya bisa dibuat oleh admin dan akan dikirim otomatis ke semua mahasiswa yang terdaftar.</p>
               <form onSubmit={addScheduleByAdmin} className="formGrid">
                 <select value={scheduleKode} onChange={(e) => setScheduleKode(e.target.value)}>
-                  {daftarMataKuliahAwal.map((mk) => (
-                    <option key={mk.kode} value={mk.kode}>
-                      {mk.nama}
-                    </option>
-                  ))}
+                  {daftarMataKuliahAwal.map((mk) => <option key={mk.kode} value={mk.kode}>{mk.nama}</option>)}
                 </select>
-
                 <select value={scheduleHari} onChange={(e) => setScheduleHari(e.target.value)}>
-                  {hariList.map((hari) => (
-                    <option key={hari} value={hari}>
-                      {hari}
-                    </option>
-                  ))}
+                  {hariList.map((hari) => <option key={hari} value={hari}>{hari}</option>)}
                 </select>
-
                 <div className="twoCols">
-                  <input
-                    type="time"
-                    value={scheduleMulai}
-                    onChange={(e) => setScheduleMulai(e.target.value)}
-                  />
-
-                  <input
-                    type="time"
-                    value={scheduleSelesai}
-                    onChange={(e) => setScheduleSelesai(e.target.value)}
-                  />
+                  <input type="time" value={scheduleMulai} onChange={(e) => setScheduleMulai(e.target.value)} />
+                  <input type="time" value={scheduleSelesai} onChange={(e) => setScheduleSelesai(e.target.value)} />
                 </div>
-
-                <input
-                  type="text"
-                  placeholder="Ruangan / kelas / link Zoom"
-                  value={scheduleRuangan}
-                  onChange={(e) => setScheduleRuangan(e.target.value)}
-                />
-
-                <input
-                  type="text"
-                  placeholder="Nama dosen"
-                  value={scheduleDosen}
-                  onChange={(e) => setScheduleDosen(e.target.value)}
-                />
-
-                <textarea
-                  placeholder="Catatan jadwal, contoh: bawa laptop / kelas online"
-                  value={scheduleCatatan}
-                  onChange={(e) => setScheduleCatatan(e.target.value)}
-                />
-
-                <button type="submit">
-                  <Save size={17} />
-                  Kirim Jadwal
-                </button>
+                <input type="text" placeholder="Ruangan / kelas / link Zoom" value={scheduleRuangan} onChange={(e) => setScheduleRuangan(e.target.value)} />
+                <input type="text" placeholder="Nama dosen" value={scheduleDosen} onChange={(e) => setScheduleDosen(e.target.value)} />
+                <textarea placeholder="Catatan jadwal" value={scheduleCatatan} onChange={(e) => setScheduleCatatan(e.target.value)} />
+                <button type="submit"><Save size={17} /> Kirim Jadwal</button>
               </form>
             </section>
           )}
 
           {profile.role === "mahasiswa" && (
-            <section className="card adminInfo">
-              <h2>Jadwal Kuliah Saya</h2>
-              <p>Jadwal kuliah di bawah ini dikirim oleh admin.</p>
-            </section>
+            <section className="card adminInfo"><h2>Jadwal Kuliah Saya</h2><p>Jadwal kuliah di bawah ini dikirim oleh admin.</p></section>
           )}
 
-          <ScheduleList
-            data={schedules}
-            profile={profile}
-            getStudentName={getStudentName}
-            onDelete={deleteSchedule}
-          />
+          <ScheduleList data={schedules} profile={profile} getStudentName={getStudentName} onDelete={deleteSchedule} />
         </>
       )}
 
@@ -1343,67 +1139,30 @@ function App() {
         <>
           {profile.role === "admin" && (
             <section className="card">
-              <div className="sectionTitle">
-                <Upload size={22} />
-                <h2>Kirim File / Foto Tugas</h2>
-              </div>
-
-              <p className="hint">
-                File yang dikirim admin akan tampil di akun mahasiswa dan bisa diunduh.
-              </p>
-
+              <div className="sectionTitle"><Upload size={22} /><h2>Kirim File / Foto Tugas</h2></div>
+              <p className="hint">File yang dikirim admin akan tampil di akun mahasiswa dan bisa diunduh.</p>
               <form onSubmit={uploadMaterialByAdmin} className="formGrid">
-                <input
-                  type="text"
-                  placeholder="Judul file tugas, contoh: Tugas Pertemuan 1"
-                  value={materialTitle}
-                  onChange={(e) => setMaterialTitle(e.target.value)}
-                />
-
-                <textarea
-                  placeholder="Deskripsi tugas, contoh: Kerjakan laporan dan kumpulkan minggu depan"
-                  value={materialDescription}
-                  onChange={(e) => setMaterialDescription(e.target.value)}
-                />
-
+                <input type="text" placeholder="Judul file tugas" value={materialTitle} onChange={(e) => setMaterialTitle(e.target.value)} />
+                <textarea placeholder="Deskripsi tugas" value={materialDescription} onChange={(e) => setMaterialDescription(e.target.value)} />
                 <label className="uploadBox">
                   <Upload size={18} />
                   {materialFile ? materialFile.name : "Upload file/foto tugas"}
-                  <input
-                    type="file"
-                    accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.zip,.rar"
-                    onChange={(e) => setMaterialFile(e.target.files?.[0] || null)}
-                    hidden
-                  />
+                  <input type="file" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.zip,.rar" onChange={(e) => setMaterialFile(e.target.files?.[0] || null)} hidden />
                 </label>
-
-                <button type="submit">
-                  <Save size={17} />
-                  Kirim File Tugas
-                </button>
+                <button type="submit"><Save size={17} /> Kirim File Tugas</button>
               </form>
             </section>
           )}
 
           {profile.role === "mahasiswa" && (
-            <section className="card adminInfo">
-              <h2>File Tugas dari Admin</h2>
-              <p>
-                File di bawah ini dikirim oleh admin. Silakan unduh dan kerjakan sesuai instruksi.
-              </p>
-            </section>
+            <section className="card adminInfo"><h2>File Tugas dari Admin</h2><p>File di bawah ini dikirim oleh admin. Silakan unduh dan kerjakan sesuai instruksi.</p></section>
           )}
 
-          <MaterialList
-            data={materials}
-            profile={profile}
-            onDelete={deleteMaterial}
-          />
+          <MaterialList data={materials} profile={profile} onDelete={deleteMaterial} />
         </>
       )}
-      <footer className="footerCredit">
-      di buat pada  30-05-2026 if rpl 6-a
-    </footer>
+
+      <footer className="footerCredit">di buat pada 30-05-2026 if rpl 6-a</footer>
     </div>
   );
 }
@@ -1413,35 +1172,23 @@ function ProgressBar({ label, value, max, color, suffix }) {
 
   return (
     <div className="progressItem">
-      <div className="progressLineTop">
-        <b>{label}</b>
-        <span>{suffix}</span>
-      </div>
-
-      <div className="progressTrack">
-        <div style={{ width: `${width}%`, background: color }} />
-      </div>
+      <div className="progressLineTop"><b>{label}</b><span>{suffix}</span></div>
+      <div className="progressTrack"><div style={{ width: `${width}%`, background: color }} /></div>
     </div>
   );
 }
 
-function TaskList({
-  title,
-  data,
-  profile,
-  getStudentName,
-  onStatus,
-  onDelete,
-  targetStatus,
-}) {
+function TaskList({ title, data, profile, getStudentName, onStatus, onDelete, onSendAdmin, targetStatus }) {
+  function showImage(item) {
+    const url = item.file_url || item.foto || "";
+    const type = item.file_type || "";
+    return url && (type.startsWith("image/") || url.startsWith("data:image") || url.includes(".jpg") || url.includes(".jpeg") || url.includes(".png") || url.includes(".webp"));
+  }
+
   return (
     <div className="tableCard">
       <div className="tableHeader">
-        <div className="sectionTitle small">
-          <ClipboardList size={22} />
-          <h2>{title}</h2>
-        </div>
-
+        <div className="sectionTitle small"><ClipboardList size={22} /><h2>{title}</h2></div>
         <span className="badge">{data.length} tugas</span>
       </div>
 
@@ -1451,83 +1198,45 @@ function TaskList({
         <div className="cardList">
           {data.map((item) => (
             <div className="taskCard" key={item.id}>
-              {profile.role === "admin" && (
-                <p className="studentTag">
-                  <Eye size={14} />
-                  {getStudentName(item.user_id)}
-                </p>
-              )}
+              {profile.role === "admin" && <p className="studentTag"><Eye size={14} />{getStudentName(item.user_id)}</p>}
 
               <div className="taskTop">
                 <b>{item.kode}</b>
-                <span className={item.status === "selesai" ? "status selesai" : "status belum"}>
-                  {item.status === "selesai" ? "Selesai" : "Belum"}
-                </span>
+                <span className={item.status === "selesai" ? "status selesai" : "status belum"}>{item.status === "selesai" ? "Selesai" : "Belum"}</span>
               </div>
 
               <h3>{item.mata_kuliah}</h3>
+              <p><b>Tugas:</b> {item.tugas || item.nama_tugas}</p>
+              <p><b>SKS:</b> {item.sks}</p>
+              <p><b>Status Kirim:</b> {item.dikirim_admin ? "Sudah dikirim ke admin" : "Tersimpan di akun"}</p>
 
-              <p>
-                <b>Tugas:</b> {item.tugas}
-              </p>
+              {item.catatan && <p><b>Catatan:</b> {item.catatan}</p>}
 
-              <p>
-                <b>SKS:</b> {item.sks}
-              </p>
-
-              {item.catatan && (
-                <p>
-                  <b>Catatan:</b> {item.catatan}
-                </p>
-              )}
-
-              {item.file_type?.startsWith("image/") && item.file_url && (
-                <img
-                  src={item.file_url}
-                  alt="Bukti tugas"
-                  className="proofImage"
-                  loading="lazy"
-                />
-              )}
+              {showImage(item) && <img src={item.file_url || item.foto} alt="Bukti tugas" className="proofImage" loading="lazy" />}
 
               {item.file_url && (
                 <div className="fileBox">
-                  <p>
-                    <b>File:</b> {item.file_name || "File tugas"}
-                  </p>
-
-                  <p>
-                    <b>Tipe:</b> {item.file_type || "-"}
-                  </p>
-
-                  <a
-                    className="downloadBtn"
-                    href={item.file_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    download
-                  >
-                    <Download size={16} />
-                    Download File
-                  </a>
+                  <p><b>File:</b> {item.file_name || "File tugas"}</p>
+                  <p><b>Tipe:</b> {item.file_type || "-"}</p>
+                  <a className="downloadBtn" href={item.file_url} target="_blank" rel="noreferrer" download><Download size={16} /> Download File</a>
                 </div>
               )}
 
               <div className="actionRow">
                 {profile.role === "mahasiswa" && (
-                  <button
-                    className={targetStatus === "selesai" ? "softBtn" : "softBtn orange"}
-                    onClick={() => onStatus(item.id, targetStatus)}
-                  >
-                    {targetStatus === "selesai" ? <CheckCircle size={16} /> : <Circle size={16} />}
-                    {targetStatus === "selesai" ? "Tandai Selesai" : "Tandai Belum"}
-                  </button>
+                  <>
+                    <button className={targetStatus === "selesai" ? "softBtn" : "softBtn orange"} onClick={() => onStatus(item.id, targetStatus)}>
+                      {targetStatus === "selesai" ? <CheckCircle size={16} /> : <Circle size={16} />}
+                      {targetStatus === "selesai" ? "Tandai Selesai" : "Tandai Belum"}
+                    </button>
+
+                    {!item.dikirim_admin && (
+                      <button className="softBtn" onClick={() => onSendAdmin(item)}><Send size={16} /> Kirim ke Admin</button>
+                    )}
+                  </>
                 )}
 
-                <button className="dangerBtn" onClick={() => onDelete(item.id)}>
-                  <Trash2 size={16} />
-                  Hapus
-                </button>
+                <button className="dangerBtn" onClick={() => onDelete(item.id)}><Trash2 size={16} /> Hapus</button>
               </div>
             </div>
           ))}
@@ -1540,10 +1249,7 @@ function TaskList({
 function ScheduleList({ data, profile, getStudentName, onDelete }) {
   return (
     <section className="card">
-      <div className="sectionTitle">
-        <CalendarDays size={22} />
-        <h2>{profile.role === "admin" ? "Daftar Jadwal Kuliah Mahasiswa" : "Jadwal Kuliah dari Admin"}</h2>
-      </div>
+      <div className="sectionTitle"><CalendarDays size={22} /><h2>{profile.role === "admin" ? "Daftar Jadwal Kuliah Mahasiswa" : "Jadwal Kuliah dari Admin"}</h2></div>
 
       {data.length === 0 ? (
         <p className="empty">Belum ada jadwal kuliah.</p>
@@ -1551,29 +1257,15 @@ function ScheduleList({ data, profile, getStudentName, onDelete }) {
         <div className="scheduleGrid">
           {data.map((item) => (
             <div className="scheduleCard" key={item.id}>
-              {profile.role === "admin" && (
-                <p className="studentTag">
-                  <User size={14} />
-                  {getStudentName(item.user_id)}
-                </p>
-              )}
-
+              {profile.role === "admin" && <p className="studentTag"><User size={14} />{getStudentName(item.user_id)}</p>}
               <h3>{item.mata_kuliah}</h3>
-
               <p><b>Kode:</b> {item.kode}</p>
               <p><b>Hari/Jam:</b> {item.hari}, {item.mulai} - {item.selesai}</p>
               <p><b>SKS:</b> {item.sks}</p>
               <p><b>Dosen:</b> {item.dosen || "-"}</p>
               <p><b>Ruangan/Zoom:</b> {item.ruangan || "-"}</p>
-
               {item.catatan && <p><b>Catatan:</b> {item.catatan}</p>}
-
-              {profile.role === "admin" && (
-                <button className="dangerBtn" onClick={() => onDelete(item.id)}>
-                  <Trash2 size={16} />
-                  Hapus Jadwal
-                </button>
-              )}
+              {profile.role === "admin" && <button className="dangerBtn" onClick={() => onDelete(item.id)}><Trash2 size={16} /> Hapus Jadwal</button>}
             </div>
           ))}
         </div>
@@ -1585,10 +1277,7 @@ function ScheduleList({ data, profile, getStudentName, onDelete }) {
 function MaterialList({ data, profile, onDelete }) {
   return (
     <section className="card">
-      <div className="sectionTitle">
-        <FileText size={22} />
-        <h2>Daftar File Tugas</h2>
-      </div>
+      <div className="sectionTitle"><FileText size={22} /><h2>Daftar File Tugas</h2></div>
 
       {data.length === 0 ? (
         <p className="empty">Belum ada file tugas dari admin.</p>
@@ -1597,51 +1286,15 @@ function MaterialList({ data, profile, onDelete }) {
           {data.map((item) => (
             <div className="scheduleCard" key={item.id}>
               <h3>{item.title}</h3>
+              {item.description && <p><b>Deskripsi:</b> {item.description}</p>}
+              <p><b>Nama file:</b> {item.file_name}</p>
+              <p><b>Tipe:</b> {item.file_type || "-"}</p>
 
-              {item.description && (
-                <p>
-                  <b>Deskripsi:</b> {item.description}
-                </p>
-              )}
-
-              <p>
-                <b>Nama file:</b> {item.file_name}
-              </p>
-
-              <p>
-                <b>Tipe:</b> {item.file_type || "-"}
-              </p>
-
-              {item.file_type?.startsWith("image/") && (
-                <img
-                  src={item.file_url}
-                  alt={item.title}
-                  className="proofImage"
-                  loading="lazy"
-                />
-              )}
+              {item.file_type?.startsWith("image/") && <img src={item.file_url} alt={item.title} className="proofImage" loading="lazy" />}
 
               <div className="actionRow">
-                <a
-                  className="downloadBtn"
-                  href={item.file_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  download
-                >
-                  <Download size={16} />
-                  Download
-                </a>
-
-                {profile.role === "admin" && (
-                  <button
-                    className="dangerBtn"
-                    onClick={() => onDelete(item.id)}
-                  >
-                    <Trash2 size={16} />
-                    Hapus
-                  </button>
-                )}
+                <a className="downloadBtn" href={item.file_url} target="_blank" rel="noreferrer" download><Download size={16} /> Download</a>
+                {profile.role === "admin" && <button className="dangerBtn" onClick={() => onDelete(item.id)}><Trash2 size={16} /> Hapus</button>}
               </div>
             </div>
           ))}
