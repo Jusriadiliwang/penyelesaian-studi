@@ -140,8 +140,9 @@ function App() {
   }
 
   async function loadProfile(user) {
-    setLoading(true);
+  setLoading(true);
 
+  try {
     let { data, error } = await supabase
       .from("profiles")
       .select("*")
@@ -173,18 +174,24 @@ function App() {
       data = createdProfile;
     }
 
+    // Tampilkan halaman dulu supaya tidak lama loading
     setProfile(data);
+    setLoading(false);
 
-    await updateLastLogin(user.id);
+    // Update login dan data lain dimuat di belakang
+    updateLastLogin(user.id);
 
     if (data.role === "admin") {
-      await loadStudents();
+      loadStudents();
     }
 
-    await loadTasks(data);
+    loadTasks(data);
+  } catch (err) {
+    console.error("Gagal memuat profil:", err);
+    setAuthMessage("Gagal memuat profil. Periksa koneksi internet atau Supabase.");
     setLoading(false);
   }
-
+}
   async function updateLastLogin(userId) {
     await supabase
       .from("profiles")
