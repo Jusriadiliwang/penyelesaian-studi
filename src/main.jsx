@@ -864,6 +864,19 @@ function App() {
     setIsUploadingMaterial(false);
   }
 }
+ const filteredTasks = useMemo(() => {
+  const keyword = search.toLowerCase();
+
+  return tasks.filter((item) => {
+    return (
+      item.kode?.toLowerCase().includes(keyword) ||
+      item.mata_kuliah?.toLowerCase().includes(keyword) ||
+      item.tugas?.toLowerCase().includes(keyword) ||
+      item.nama_tugas?.toLowerCase().includes(keyword) ||
+      item.catatan?.toLowerCase().includes(keyword)
+    );
+  });
+}, [tasks, search]);
 
   const tasksDone = filteredTasks.filter((item) => item.status === "selesai");
   const tasksNotDone = filteredTasks.filter((item) => item.status !== "selesai");
