@@ -93,7 +93,7 @@ function App() {
   const [search, setSearch] = useState("");
   const [activeMenu, setActiveMenu] = useState("tugas");
   const [isUploadingMaterial, setIsUploadingMaterial] = useState(false);
-}
+
   useEffect(() => {
     initAuth();
 
@@ -657,124 +657,196 @@ function App() {
       await loadSchedules(profile);
     }
 
-      async function uploadMaterialByAdmin(e) {
-      e.preventDefault();
+     async function uploadMaterialByAdmin(e) {
+  e.preventDefault();
 
-      if (profile?.role !== "admin") {
-        alert("Hanya admin yang bisa mengirim file tugas.");
-        return;
-      }
+  if (isUploadingMaterial) return;
 
-      if (!targetMaterialStudentId) {
-        alert("Pilih mahasiswa tujuan terlebih dahulu.");
-        return;
-      }
-
-      if (!materialTitle.trim()) {
-        alert("Judul file tugas harus diisi.");
-        return;
-      }
-
-      if (!materialFile) {
-        alert("Pilih file atau foto tugas terlebih dahulu.");
-        return;
-      }
-
-      const mahasiswaTujuan =
-        targetMaterialStudentId === "all"
-          ? students.filter((student) => student.role === "mahasiswa")
-          : students.filter((student) => student.id === targetMaterialStudentId);
-
-      if (mahasiswaTujuan.length === 0) {
-        alert("Mahasiswa tujuan tidak ditemukan.");
-        return;
-      }
-
-      const safeName = materialFile.name.replace(/\s+/g, "-").toLowerCase();
-
-      const uniqueId =
-        crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
-
-      const filePath = `admin-files/${profile.id}/${uniqueId}-${safeName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from("task-files")
-        .upload(filePath, materialFile, {
-          upsert: true,
-        });
-
-      if (uploadError) {
-        console.error("Upload error:", uploadError);
-        alert("Gagal upload file: " + uploadError.message);
-        return;
-      }
-
-      const { data: publicUrlData } = supabase.storage
-        .from("task-files")
-        .getPublicUrl(filePath);
-
-    const rows = mahasiswaTujuan.map((student) => ({
-    user_id: student.id,
-    title: materialTitle,
-    description: materialDescription,
-    file_name: materialFile.name,
-    file_url: publicUrlData.publicUrl,
-    file_type: materialFile.type || "file",
-    created_by: profile.id,
-  }));
-
-  const { error: insertError } = await supabase.from("materials").insert(rows);
-
-  if (insertError) {
-    console.error("Insert materials error:", insertError);
-    alert("Gagal menyimpan data file: " + insertError.message);
+  if (profile?.role !== "admin") {
+    alert("Hanya admin yang bisa mengirim file tugas.");
     return;
   }
 
-  setMaterials((prev) => [...rows, ...prev]);
+  if (!targetMaterialStudentId) {
+    alert("Pilih mahasiswa tujuan terlebih dahulu.");
+    return;
+  }
 
-  alert(
-    targetMaterialStudentId === "all"
-      ? "File/PDF tugas berhasil dikirim ke semua mahasiswa."
-      : "File/PDF tugas berhasil dikirim ke mahasiswa yang dipilih."
-  );
+  if (!materialTitle.trim()) {
+    alert("Judul file tugas harus diisi.");
+    return;
+  }
 
-setTargetMaterialStudentId("");
-setMaterialTitle("");
-setMaterialDescription("");
-setMaterialFile(null);
-  async function deleteMaterial(id) {
-    if (profile?.role !== "admin") {
-      alert("Hanya admin yang bisa menghapus file tugas.");
+  if (!materialFile) {
+    alert("Pilih file atau foto tugas terlebih dahulu.");
+    return;
+  }
+
+  setIsUploadingMaterial(true);
+
+  try {
+    const mahasiswaTujuan =
+      targetMaterialStudentId === "all"
+        ? students.filter((student) => student.role === "mahasiswa")
+        : students.filter((student) => student.id === targetMaterialStudentId);
+
+    if (mahasiswaTujuan.length === 0) {
+      alert("Mahasiswa tujuan tidak ditemukan.");
       return;
     }
 
-    const ok = confirm("Yakin ingin menghapus file tugas ini?");
-    if (!ok) return;
+    const safeName = materialFile.name.replace(/\s+/g, "-").toLowerCase();
+    const uniqueId =
+      crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 
-    const { error } = await supabase.from("materials").delete().eq("id", id);
+    const filePath = `admin-files/${profile.id}/${uniqueId}-${safeName}`;
 
-    if (error) {
-      alert("Gagal menghapus file: " + error.message);
+    const { error: uploadError } = await supabase.storage
+      .from("task-files")
+      .upload(filePath, materialFile, {
+        upsert: true,
+      });
+
+    if (uploadError) {
+      alert("Gagal upload file: " + uploadError.message);
+      return;
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from("task-files")
+      .getPublicUrl(filePath);
+
+    const rows = mahasiswaTujuan.map((student) => ({
+      user_id: student.id,
+      title: materialTitle,
+      description: materialDescription,
+      file_name: materialFile.name,
+      file_url: publicUrlData.publicUrl,
+      file_type: materialFile.type || "file",
+      created_by: profile.id,
+    }));
+
+    const { error: insertError } = await supabase.from("materials").insert(rows);
+
+    if (insertError) {
+      alert("Gagal menyimpan data file: " + insertError.message);
       return;
     }
 
     setMaterials((prev) => [...rows, ...prev]);
+
+    alert(
+      targetMaterialStudentId === "all"
+        ? "File/PDF tugas berhasil dikirim ke semua mahasiswa."
+        : "File/PDF tugas berhasil dikirim ke mahasiswa yang dipilih."
+    );
+
+    setTargetMaterialStudentId("");
+    setMaterialTitle("");
+    setMaterialDescription("");
+    setMaterialFile(null);
+  } catch (err) {
+    console.error(err);
+    alert("Terjadi kesalahan saat mengirim file.");
+  } finally {
+    setIsUploadingMaterial(false);
+  }
+}
+  async function uploadMaterialByAdmin(e) {
+  e.preventDefault();
+
+  if (isUploadingMaterial) return;
+
+  if (profile?.role !== "admin") {
+    alert("Hanya admin yang bisa mengirim file tugas.");
+    return;
   }
 
-  const filteredTasks = useMemo(() => {
-    const keyword = search.toLowerCase();
+  if (!targetMaterialStudentId) {
+    alert("Pilih mahasiswa tujuan terlebih dahulu.");
+    return;
+  }
 
-    return tasks.filter((item) => {
-      return (
-        item.kode?.toLowerCase().includes(keyword) ||
-        item.mata_kuliah?.toLowerCase().includes(keyword) ||
-        item.tugas?.toLowerCase().includes(keyword) ||
-        item.nama_tugas?.toLowerCase().includes(keyword) ||
-        item.catatan?.toLowerCase().includes(keyword)
-      );
-    });
-  }, [tasks, search]);
+  if (!materialTitle.trim()) {
+    alert("Judul file tugas harus diisi.");
+    return;
+  }
+
+  if (!materialFile) {
+    alert("Pilih file atau foto tugas terlebih dahulu.");
+    return;
+  }
+
+  setIsUploadingMaterial(true);
+
+  try {
+    const mahasiswaTujuan =
+      targetMaterialStudentId === "all"
+        ? students.filter((student) => student.role === "mahasiswa")
+        : students.filter((student) => student.id === targetMaterialStudentId);
+
+    if (mahasiswaTujuan.length === 0) {
+      alert("Mahasiswa tujuan tidak ditemukan.");
+      return;
+    }
+
+    const safeName = materialFile.name.replace(/\s+/g, "-").toLowerCase();
+    const uniqueId =
+      crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+
+    const filePath = `admin-files/${profile.id}/${uniqueId}-${safeName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("task-files")
+      .upload(filePath, materialFile, {
+        upsert: true,
+      });
+
+    if (uploadError) {
+      alert("Gagal upload file: " + uploadError.message);
+      return;
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from("task-files")
+      .getPublicUrl(filePath);
+
+    const rows = mahasiswaTujuan.map((student) => ({
+      user_id: student.id,
+      title: materialTitle,
+      description: materialDescription,
+      file_name: materialFile.name,
+      file_url: publicUrlData.publicUrl,
+      file_type: materialFile.type || "file",
+      created_by: profile.id,
+    }));
+
+    const { error: insertError } = await supabase.from("materials").insert(rows);
+
+    if (insertError) {
+      alert("Gagal menyimpan data file: " + insertError.message);
+      return;
+    }
+
+    setMaterials((prev) => [...rows, ...prev]);
+
+    alert(
+      targetMaterialStudentId === "all"
+        ? "File/PDF tugas berhasil dikirim ke semua mahasiswa."
+        : "File/PDF tugas berhasil dikirim ke mahasiswa yang dipilih."
+    );
+
+    setTargetMaterialStudentId("");
+    setMaterialTitle("");
+    setMaterialDescription("");
+    setMaterialFile(null);
+  } catch (err) {
+    console.error(err);
+    alert("Terjadi kesalahan saat mengirim file.");
+  } finally {
+    setIsUploadingMaterial(false);
+  }
+}
 
   const tasksDone = filteredTasks.filter((item) => item.status === "selesai");
   const tasksNotDone = filteredTasks.filter((item) => item.status !== "selesai");
