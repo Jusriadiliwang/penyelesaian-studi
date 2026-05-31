@@ -762,8 +762,10 @@ function App() {
       target_label: targetLabel,
     }));
 
-    const { error: insertError } = await supabase.from("materials").insert(rows);
-
+   const { data: insertedRows, error: insertError } = await supabase
+    .from("materials")
+    .insert(rows)
+    .select();
     if (insertError) {
       alert("Gagal menyimpan data file: " + insertError.message);
       return;
@@ -780,7 +782,7 @@ function App() {
       url: "/",
     }),
   });
-    setMaterials((prev) => [...rows, ...prev]);
+    setMaterials((prev) => [...(insertedRows || []), ...prev]);
 
     alert(
       targetMaterialStudentId === "all"
@@ -803,6 +805,12 @@ function App() {
  async function deleteMaterial(id) {
   if (profile?.role !== "admin") {
     alert("Hanya admin yang bisa menghapus file tugas.");
+    return;
+  }
+
+  if (!id) {
+    alert("Data file belum memiliki ID. Silakan refresh halaman dulu, lalu hapus ulang.");
+    await loadMaterials();
     return;
   }
 
