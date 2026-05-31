@@ -1059,12 +1059,12 @@ function App() {
                   </select>
                 ) : (
                   <>
-                    <input type="text" placeholder="Nama tugas lain, contoh: Proposal, Sertifikat, Organisasi" value={customTaskTitle} onChange={(e) => setCustomTaskTitle(e.target.value)} />
+                    <input type="text" placeholder="Nama tugas lain, contoh Proposal, Organisasi,matkul dll" value={customTaskTitle} onChange={(e) => setCustomTaskTitle(e.target.value)} />
                     <input type="number" min="0" placeholder="SKS jika ada, isi 0 jika bukan mata kuliah" value={customTaskSks} onChange={(e) => setCustomTaskSks(e.target.value)} />
                   </>
                 )}
 
-                <input type="text" placeholder="Nama tugas, contoh: Laporan, PPT, Program, UAS" value={taskName} onChange={(e) => setTaskName(e.target.value)} />
+                <input type="text" placeholder="Jenis Tugas Laporan, PPT, Program, UAS dll" value={taskName} onChange={(e) => setTaskName(e.target.value)} />
 
                 <select value={taskStatus} onChange={(e) => setTaskStatus(e.target.value)}>
                   <option value="belum">Belum Selesai</option>
