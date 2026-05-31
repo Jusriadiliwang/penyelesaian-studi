@@ -93,7 +93,7 @@ function App() {
   const [search, setSearch] = useState("");
   const [activeMenu, setActiveMenu] = useState("tugas");
   const [isUploadingMaterial, setIsUploadingMaterial] = useState(false);
- 
+}
   useEffect(() => {
     initAuth();
 
@@ -713,37 +713,36 @@ function App() {
         .from("task-files")
         .getPublicUrl(filePath);
 
-      const rows = mahasiswaTujuan.map((student) => ({
-        user_id: student.id,
-        title: materialTitle,
-        description: materialDescription,
-        file_name: materialFile.name,
-        file_url: publicUrlData.publicUrl,
-        file_type: materialFile.type || "file",
-        created_by: profile.id,
-      }));
+    const rows = mahasiswaTujuan.map((student) => ({
+    user_id: student.id,
+    title: materialTitle,
+    description: materialDescription,
+    file_name: materialFile.name,
+    file_url: publicUrlData.publicUrl,
+    file_type: materialFile.type || "file",
+    created_by: profile.id,
+  }));
 
-      const { error: insertError } = await supabase.from("materials").insert(rows);
+  const { error: insertError } = await supabase.from("materials").insert(rows);
 
-      if (insertError) {
-        console.error("Insert materials error:", insertError);
-        alert("Gagal menyimpan data file: " + insertError.message);
-        return;
-      }
+  if (insertError) {
+    console.error("Insert materials error:", insertError);
+    alert("Gagal menyimpan data file: " + insertError.message);
+    return;
+  }
 
-      alert(
-        targetMaterialStudentId === "all"
-          ? "File/PDF tugas berhasil dikirim ke semua mahasiswa."
-          : "File/PDF tugas berhasil dikirim ke mahasiswa yang dipilih."
-      );
+  setMaterials((prev) => [...rows, ...prev]);
 
-      setTargetMaterialStudentId("");
-      setMaterialTitle("");
-      setMaterialDescription("");
-      setMaterialFile(null);
+  alert(
+    targetMaterialStudentId === "all"
+      ? "File/PDF tugas berhasil dikirim ke semua mahasiswa."
+      : "File/PDF tugas berhasil dikirim ke mahasiswa yang dipilih."
+  );
 
-      await loadMaterials();
-    }
+setTargetMaterialStudentId("");
+setMaterialTitle("");
+setMaterialDescription("");
+setMaterialFile(null);
   async function deleteMaterial(id) {
     if (profile?.role !== "admin") {
       alert("Hanya admin yang bisa menghapus file tugas.");
@@ -760,7 +759,7 @@ function App() {
       return;
     }
 
-    await loadMaterials();
+    setMaterials((prev) => [...rows, ...prev]);
   }
 
   const filteredTasks = useMemo(() => {
@@ -1423,3 +1422,4 @@ function MaterialList({ data, profile, onDelete }) {
 }
 
 createRoot(document.getElementById("root")).render(<App />);
+
