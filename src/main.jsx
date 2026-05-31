@@ -958,9 +958,9 @@ function App() {
     <div className="page" id="printArea">
       <header className="hero">
         <div>
-          <p className="miniLabel">Menu Penyelesaian Studi</p>
-          <h1>Checklist Tugas dan Mata Kuliah</h1>
-          <p>Halo, {profile.nama}. Role akun: <b>{profile.role}</b></p>
+          <p className="miniLabel">Dashboard Penyelesaian Studi</p>
+          <h1>Sistem Monitoring Tugas dan Jadwal Kuliah</h1>
+          <p>Selamat datang, {profile.nama}. Status akun: <b>{profile.role}</b></p>
         </div>
 
         <div className="heroActions">
