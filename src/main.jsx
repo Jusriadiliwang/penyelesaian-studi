@@ -592,8 +592,17 @@ function App() {
 
     const course = getCourse(scheduleKode);
 
-    const dataJadwal = {
-      user_id: targetScheduleStudentId,
+      const mahasiswaTujuan =
+      targetScheduleStudentId === "all"
+        ? students.filter((student) => student.role === "mahasiswa")
+        : students.filter((student) => student.id === targetScheduleStudentId);
+
+    if (mahasiswaTujuan.length === 0) {
+      alert("Mahasiswa tujuan tidak ditemukan.");
+      return;
+    }
+   const dataJadwal = mahasiswaTujuan.map((student) => ({
+    user_id: student.id,
       kode: course.kode,
       mata_kuliah: course.nama,
       sks: course.sks,
@@ -603,7 +612,7 @@ function App() {
       ruangan: scheduleRuangan,
       dosen: scheduleDosen,
       catatan: scheduleCatatan,
-    };
+    }));
 
     const { error } = await supabase.from("schedules").insert(dataJadwal);
 
@@ -611,9 +620,11 @@ function App() {
       alert("Gagal mengirim jadwal: " + error.message);
       return;
     }
-
-    alert("Jadwal kuliah berhasil dikirim ke mahasiswa yang dipilih.");
-
+    alert(
+        targetScheduleStudentId === "all"
+          ? "Jadwal kuliah berhasil dikirim ke semua mahasiswa."
+          : "Jadwal kuliah berhasil dikirim ke mahasiswa yang dipilih."
+      );
     setTargetScheduleStudentId("");
     setScheduleKode(daftarMataKuliahAwal[0].kode);
     setScheduleHari("Senin");
@@ -645,69 +656,86 @@ function App() {
       await loadSchedules(profile);
     }
 
-    async function uploadMaterialByAdmin(e) {
-    e.preventDefault();
+      async function uploadMaterialByAdmin(e) {
+      e.preventDefault();
 
-    if (profile?.role !== "admin") {
-      alert("Hanya admin yang bisa mengirim file tugas.");
-      return;
+      if (profile?.role !== "admin") {
+        alert("Hanya admin yang bisa mengirim file tugas.");
+        return;
+      }
+
+      if (!targetMaterialStudentId) {
+        alert("Pilih mahasiswa tujuan terlebih dahulu.");
+        return;
+      }
+
+      if (!materialTitle.trim()) {
+        alert("Judul file tugas harus diisi.");
+        return;
+      }
+
+      if (!materialFile) {
+        alert("Pilih file atau foto tugas terlebih dahulu.");
+        return;
+      }
+
+      const mahasiswaTujuan =
+        targetMaterialStudentId === "all"
+          ? students.filter((student) => student.role === "mahasiswa")
+          : students.filter((student) => student.id === targetMaterialStudentId);
+
+      if (mahasiswaTujuan.length === 0) {
+        alert("Mahasiswa tujuan tidak ditemukan.");
+        return;
+      }
+
+      const safeName = materialFile.name.replace(/\s+/g, "-").toLowerCase();
+
+      for (const student of mahasiswaTujuan) {
+        const filePath = `admin-files/${student.id}/${Date.now()}-${safeName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("task-files")
+          .upload(filePath, materialFile);
+
+        if (uploadError) {
+          alert("Gagal upload file untuk " + student.nama + ": " + uploadError.message);
+          return;
+        }
+
+        const { data: publicUrlData } = supabase.storage
+          .from("task-files")
+          .getPublicUrl(filePath);
+
+        const { error: insertError } = await supabase.from("materials").insert({
+          user_id: student.id,
+          title: materialTitle,
+          description: materialDescription,
+          file_name: materialFile.name,
+          file_url: publicUrlData.publicUrl,
+          file_type: materialFile.type || "file",
+          created_by: profile.id,
+        });
+
+        if (insertError) {
+          alert("Gagal menyimpan data file untuk " + student.nama + ": " + insertError.message);
+          return;
+        }
+      }
+
+      alert(
+        targetMaterialStudentId === "all"
+          ? "File/PDF tugas berhasil dikirim ke semua mahasiswa."
+          : "File/PDF tugas berhasil dikirim ke mahasiswa yang dipilih."
+      );
+
+      setTargetMaterialStudentId("");
+      setMaterialTitle("");
+      setMaterialDescription("");
+      setMaterialFile(null);
+
+      await loadMaterials();
     }
-
-    if (!targetMaterialStudentId) {
-      alert("Pilih mahasiswa tujuan terlebih dahulu.");
-      return;
-    }
-
-    if (!materialTitle.trim()) {
-      alert("Judul file tugas harus diisi.");
-      return;
-    }
-
-    if (!materialFile) {
-      alert("Pilih file atau foto tugas terlebih dahulu.");
-      return;
-    }
-
-    const safeName = materialFile.name.replace(/\s+/g, "-").toLowerCase();
-    const filePath = `admin-files/${targetMaterialStudentId}/${Date.now()}-${safeName}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from("task-files")
-      .upload(filePath, materialFile);
-
-    if (uploadError) {
-      alert("Gagal upload file: " + uploadError.message);
-      return;
-    }
-
-    const { data: publicUrlData } = supabase.storage
-      .from("task-files")
-      .getPublicUrl(filePath);
-
-    const { error: insertError } = await supabase.from("materials").insert({
-      user_id: targetMaterialStudentId,
-      title: materialTitle,
-      description: materialDescription,
-      file_name: materialFile.name,
-      file_url: publicUrlData.publicUrl,
-      file_type: materialFile.type || "file",
-      created_by: profile.id,
-    });
-
-    if (insertError) {
-      alert("Gagal menyimpan data file: " + insertError.message);
-      return;
-    }
-
-    alert("File/PDF tugas berhasil dikirim ke mahasiswa yang dipilih.");
-
-    setTargetMaterialStudentId("");
-    setMaterialTitle("");
-    setMaterialDescription("");
-    setMaterialFile(null);
-
-    await loadMaterials();
-  }
   async function deleteMaterial(id) {
     if (profile?.role !== "admin") {
       alert("Hanya admin yang bisa menghapus file tugas.");
@@ -1130,6 +1158,8 @@ function App() {
                 onChange={(e) => setTargetScheduleStudentId(e.target.value)}
               >
                 <option value="">Pilih mahasiswa tujuan</option>
+                <option value="all">Semua Mahasiswa</option>
+
                 {students
                   .filter((student) => student.role === "mahasiswa")
                   .map((student) => (
