@@ -1201,11 +1201,14 @@ function App() {
               <div className="sectionTitle"><Upload size={22} /><h2>Kirim File / Foto Tugas</h2></div>
               <p className="hint">File yang dikirim admin akan tampil di akun mahasiswa dan bisa diunduh.</p>
               <form onSubmit={uploadMaterialByAdmin} className="formGrid">
-                <select
+
+              <select
                 value={targetMaterialStudentId}
                 onChange={(e) => setTargetMaterialStudentId(e.target.value)}
               >
                 <option value="">Pilih mahasiswa tujuan</option>
+                <option value="all">Semua Mahasiswa</option>
+
                 {students
                   .filter((student) => student.role === "mahasiswa")
                   .map((student) => (
@@ -1214,6 +1217,7 @@ function App() {
                     </option>
                   ))}
               </select>
+
                 <input type="text" placeholder="Judul file tugas" value={materialTitle} onChange={(e) => setMaterialTitle(e.target.value)} />
                 <textarea placeholder="Deskripsi tugas" value={materialDescription} onChange={(e) => setMaterialDescription(e.target.value)} />
                 <label className="uploadBox">
