@@ -732,6 +732,11 @@ function App() {
     const { data: publicUrlData } = supabase.storage
       .from("task-files")
       .getPublicUrl(filePath);
+     
+    const targetLabel =
+    targetMaterialStudentId === "all"
+      ? "Semua Mahasiswa"
+      : `${mahasiswaTujuan[0]?.nama} - ${mahasiswaTujuan[0]?.nim}`;
 
     const rows = mahasiswaTujuan.map((student) => ({
       user_id: student.id,
@@ -741,6 +746,8 @@ function App() {
       file_url: publicUrlData.publicUrl,
       file_type: materialFile.type || "file",
       created_by: profile.id,
+      target_type: targetMaterialStudentId === "all" ? "all" : "single",
+      target_label: targetLabel,
     }));
 
     const { error: insertError } = await supabase.from("materials").insert(rows);
@@ -1288,7 +1295,12 @@ function App() {
             <section className="card adminInfo"><h2>File Tugas dari Admin</h2><p>File di bawah ini dikirim oleh admin. Silakan unduh dan kerjakan sesuai instruksi.</p></section>
           )}
 
-          <MaterialList data={materials} profile={profile} onDelete={deleteMaterial} />
+          <MaterialList
+          data={materials}
+          profile={profile}
+          onDelete={deleteMaterial}
+          getStudentName={getStudentName}
+        />
         </>
       )}
           <div className="bottomActions">
@@ -1417,7 +1429,7 @@ function ScheduleList({ data, profile, getStudentName, onDelete }) {
   );
 }
 
-function MaterialList({ data, profile, onDelete }) {
+function MaterialList({ data, profile, onDelete, getStudentName }) {
   return (
     <section className="card">
       <div className="sectionTitle"><FileText size={22} /><h2>Daftar File Tugas</h2></div>
@@ -1429,6 +1441,20 @@ function MaterialList({ data, profile, onDelete }) {
           {data.map((item) => (
             <div className="scheduleCard" key={item.id}>
               <h3>{item.title}</h3>
+               {profile.role === "admin" && (
+                <p>
+                  <b>Status Pengiriman:</b>{" "}
+                  {item.target_type === "all"
+                    ? "Dikirim ke semua mahasiswa"
+                    : `Dikirim ke ${item.target_label || getStudentName?.(item.user_id) || "-"}`}
+                </p>
+              )}
+
+              {profile.role === "mahasiswa" && (
+                <p>
+                  <b>Status Pengiriman:</b> Dikirim oleh admin ke akun Anda
+                </p>
+              )}
               {item.description && <p><b>Deskripsi:</b> {item.description}</p>}
               <p><b>Nama file:</b> {item.file_name}</p>
               <p><b>Tipe:</b> {item.file_type || "-"}</p>
