@@ -685,23 +685,29 @@ function App() {
           : students.filter((student) => student.id === targetMaterialStudentId);
 
       if (mahasiswaTujuan.length === 0) {
-        alert("Mahasiswa tujuan tidak ditemukan.");
-        return;
-      }
+      alert("Mahasiswa tujuan tidak ditemukan. Pastikan data mahasiswa sudah ada.");
+      return;
+    }
 
       const safeName = materialFile.name.replace(/\s+/g, "-").toLowerCase();
 
       for (const student of mahasiswaTujuan) {
-        const filePath = `admin-files/${student.id}/${Date.now()}-${safeName}`;
+      const uniqueId =
+        crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 
-        const { error: uploadError } = await supabase.storage
-          .from("task-files")
-          .upload(filePath, materialFile);
+      const filePath = `admin-files/${student.id}/${uniqueId}-${safeName}`;
 
-        if (uploadError) {
-          alert("Gagal upload file untuk " + student.nama + ": " + uploadError.message);
-          return;
-        }
+      const { error: uploadError } = await supabase.storage
+        .from("task-files")
+        .upload(filePath, materialFile, {
+          upsert: true,
+        });
+
+      if (uploadError) {
+        console.error("Upload error:", uploadError);
+        alert("Gagal upload file untuk " + student.nama + ": " + uploadError.message);
+        return;
+      }
 
         const { data: publicUrlData } = supabase.storage
           .from("task-files")
@@ -718,6 +724,7 @@ function App() {
         });
 
         if (insertError) {
+          console.error("Insert materials error:", insertError);
           alert("Gagal menyimpan data file untuk " + student.nama + ": " + insertError.message);
           return;
         }
@@ -736,6 +743,7 @@ function App() {
 
       await loadMaterials();
     }
+    
   async function deleteMaterial(id) {
     if (profile?.role !== "admin") {
       alert("Hanya admin yang bisa menghapus file tugas.");
