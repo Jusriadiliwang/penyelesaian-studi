@@ -1001,21 +1001,18 @@ function App() {
 
     printWindow.document.close();
   }
-    function exportPdf() {
-    // isi export pdf kamu
-  }
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding)
+    .replace(/-/g, "+")
+    .replace(/_/g, "/");
 
-  // TEMPEL FUNGSI NOTIFIKASI DI SINI
+  const rawData = window.atob(base64);
 
-  function urlBase64ToUint8Array(base64String) {
-    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-    const rawData = window.atob(base64);
+  return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
+}
 
-    return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
-  }
-
-  async function aktifkanNotifikasi() {
+async function aktifkanNotifikasi() {
   if (!profile) return;
 
   if (!("serviceWorker" in navigator)) {
@@ -1076,36 +1073,78 @@ function App() {
 
   alert("Notifikasi berhasil diaktifkan.");
 }
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding)
+    .replace(/-/g, "+")
+    .replace(/_/g, "/");
 
-    const registration = await navigator.serviceWorker.register("/service-worker.js");
+  const rawData = window.atob(base64);
 
-    const subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(import.meta.env.VITE_VAPID_PUBLIC_KEY),
-    });
+  return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
+}
 
-    const subJson = subscription.toJSON();
+async function aktifkanNotifikasi() {
+  if (!profile) return;
 
-    const { error } = await supabase.from("push_subscriptions").upsert(
-      {
-        user_id: profile.id,
-        endpoint: subJson.endpoint,
-        p256dh: subJson.keys.p256dh,
-        auth: subJson.keys.auth,
-      },
-      {
-        onConflict: "endpoint",
-      }
-    );
-
-    if (error) {
-      alert("Gagal menyimpan notifikasi: " + error.message);
-      return;
-    }
-
-    alert("Notifikasi berhasil diaktifkan.");
+  if (!("serviceWorker" in navigator)) {
+    alert("Browser tidak mendukung Service Worker.");
+    return;
   }
 
+  if (!("PushManager" in window)) {
+    alert("Browser tidak mendukung Push Notification.");
+    return;
+  }
+
+  if (!import.meta.env.VITE_VAPID_PUBLIC_KEY) {
+    alert("VITE_VAPID_PUBLIC_KEY belum diisi di Vercel atau .env.");
+    return;
+  }
+
+  const permission = await Notification.requestPermission();
+
+  if (permission !== "granted") {
+    alert("Izin notifikasi ditolak.");
+    return;
+  }
+
+  const registration = await navigator.serviceWorker.register("/service-worker.js");
+
+  const existingSubscription = await registration.pushManager.getSubscription();
+
+  if (existingSubscription) {
+    await existingSubscription.unsubscribe();
+  }
+
+  const subscription = await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(
+      import.meta.env.VITE_VAPID_PUBLIC_KEY
+    ),
+  });
+
+  const subJson = subscription.toJSON();
+
+  const { error } = await supabase.from("push_subscriptions").upsert(
+    {
+      user_id: profile.id,
+      endpoint: subJson.endpoint,
+      p256dh: subJson.keys.p256dh,
+      auth: subJson.keys.auth,
+    },
+    {
+      onConflict: "endpoint",
+    }
+  );
+
+  if (error) {
+    alert("Gagal menyimpan notifikasi: " + error.message);
+    return;
+  }
+
+  alert("Notifikasi berhasil diaktifkan.");
+}
   if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
     return (
       <div className="authPage">
