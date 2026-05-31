@@ -638,6 +638,18 @@ function App() {
       alert("Gagal mengirim jadwal: " + error.message);
       return;
     }
+    fetch("/api/send-push", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      userIds: mahasiswaTujuan.map((student) => student.id),
+      title: "Jadwal kuliah baru dari admin",
+      body: `${course.nama} - ${scheduleHari}, ${scheduleMulai}`,
+      url: "/",
+    }),
+  });
     alert(
         targetScheduleStudentId === "all"
           ? "Jadwal kuliah berhasil dikirim ke semua mahasiswa."
@@ -756,7 +768,18 @@ function App() {
       alert("Gagal menyimpan data file: " + insertError.message);
       return;
     }
-
+    fetch("/api/send-push", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      userIds: mahasiswaTujuan.map((student) => student.id),
+      title: "File tugas baru dari admin",
+      body: materialTitle,
+      url: "/",
+    }),
+  });
     setMaterials((prev) => [...rows, ...prev]);
 
     alert(
@@ -977,6 +1000,68 @@ function App() {
     `);
 
     printWindow.document.close();
+  }
+    function exportPdf() {
+    // isi export pdf kamu
+  }
+
+  // TEMPEL FUNGSI NOTIFIKASI DI SINI
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = window.atob(base64);
+
+    return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
+  }
+
+  async function aktifkanNotifikasi() {
+    if (!profile) return;
+
+    if (!("serviceWorker" in navigator)) {
+      alert("Browser tidak mendukung Service Worker.");
+      return;
+    }
+
+    if (!("PushManager" in window)) {
+      alert("Browser tidak mendukung Push Notification.");
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+
+    if (permission !== "granted") {
+      alert("Izin notifikasi ditolak.");
+      return;
+    }
+
+    const registration = await navigator.serviceWorker.register("/service-worker.js");
+
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(import.meta.env.VITE_VAPID_PUBLIC_KEY),
+    });
+
+    const subJson = subscription.toJSON();
+
+    const { error } = await supabase.from("push_subscriptions").upsert(
+      {
+        user_id: profile.id,
+        endpoint: subJson.endpoint,
+        p256dh: subJson.keys.p256dh,
+        auth: subJson.keys.auth,
+      },
+      {
+        onConflict: "endpoint",
+      }
+    );
+
+    if (error) {
+      alert("Gagal menyimpan notifikasi: " + error.message);
+      return;
+    }
+
+    alert("Notifikasi berhasil diaktifkan.");
   }
 
   if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
