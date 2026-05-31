@@ -1,3 +1,20 @@
+window.addEventListener("error", (event) => {
+  document.body.innerHTML = `
+    <div style="padding:24px;font-family:Arial;color:red">
+      <h2>Terjadi Error</h2>
+      <p>${event.message}</p>
+    </div>
+  `;
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  document.body.innerHTML = `
+    <div style="padding:24px;font-family:Arial;color:red">
+      <h2>Terjadi Error Promise</h2>
+      <p>${event.reason?.message || event.reason}</p>
+    </div>
+  `;
+});
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
