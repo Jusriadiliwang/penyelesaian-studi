@@ -963,12 +963,6 @@ function App() {
           <p>Selamat datang, {profile.nama}. Status akun: <b>{profile.role}</b></p>
         </div>
 
-        <div className="heroActions">
-          <button onClick={exportPdf}><Download size={17} /> PDF</button>
-          <button onClick={logout}><LogOut size={17} /> Logout</button>
-        </div>
-      </header>
-
       {profile.role === "admin" && (
         <>
           <section className="card">
@@ -1168,8 +1162,21 @@ function App() {
           <MaterialList data={materials} profile={profile} onDelete={deleteMaterial} />
         </>
       )}
+    <div className="bottomActions">
+      <button onClick={exportPdf}>
+        <Download size={17} />
+        PDF
+      </button>
 
-      <footer className="footerCredit">di buat pada 30-05-2026 if rpl 6-a</footer>
+      <button onClick={logout}>
+        <LogOut size={17} />
+        Logout
+      </button>
+    </div>
+
+    <footer className="footerCredit">
+      di buat pada 30-05-2026 if rpl 6-a jusri
+</footer>
     </div>
   );
 }
