@@ -864,6 +864,25 @@ function App() {
     setIsUploadingMaterial(false);
   }
 }
+
+ async function deleteMaterial(id) {
+  if (profile?.role !== "admin") {
+    alert("Hanya admin yang bisa menghapus file tugas.");
+    return;
+  }
+
+  const ok = confirm("Yakin ingin menghapus file tugas ini?");
+  if (!ok) return;
+
+  const { error } = await supabase.from("materials").delete().eq("id", id);
+
+  if (error) {
+    alert("Gagal menghapus file: " + error.message);
+    return;
+  }
+
+  setMaterials((prev) => prev.filter((item) => item.id !== id));
+}
  const filteredTasks = useMemo(() => {
   const keyword = search.toLowerCase();
 
@@ -880,7 +899,7 @@ function App() {
 
   const tasksDone = filteredTasks.filter((item) => item.status === "selesai");
   const tasksNotDone = filteredTasks.filter((item) => item.status !== "selesai");
-
+  
   const totalTasks = tasks.length;
   const totalDone = tasks.filter((item) => item.status === "selesai").length;
   const totalNotDone = tasks.filter((item) => item.status !== "selesai").length;
