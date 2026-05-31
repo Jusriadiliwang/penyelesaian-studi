@@ -1037,7 +1037,9 @@ async function aktifkanNotifikasi() {
     return;
   }
 
-  const registration = await navigator.serviceWorker.register("/service-worker.js");
+  await navigator.serviceWorker.register("/service-worker.js");
+
+  const registration = await navigator.serviceWorker.ready;
 
   const existingSubscription = await registration.pushManager.getSubscription();
 
