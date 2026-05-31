@@ -61,6 +61,8 @@ function App() {
 
   const [students, setStudents] = useState([]);
   const [selectedStudentId, setSelectedStudentId] = useState("all");
+  const [targetScheduleStudentId, setTargetScheduleStudentId] = useState("");
+  const [targetMaterialStudentId, setTargetMaterialStudentId] = useState("");
 
   const [tasks, setTasks] = useState([]);
   const [schedules, setSchedules] = useState([]);
@@ -261,22 +263,30 @@ function App() {
     setMenuLoading(false);
   }
 
-  async function loadMaterials() {
-    setMenuLoading(true);
+        async function loadMaterials() {
+        setMenuLoading(true);
 
-    const { data, error } = await supabase
-      .from("materials")
-      .select("*")
-      .order("created_at", { ascending: false });
+        let query = supabase
+          .from("materials")
+          .select("*")
+          .order("created_at", { ascending: false });
 
-    if (error) {
-      console.error(error);
-      alert("Gagal memuat file tugas admin: " + error.message);
-    }
+        if (profile?.role !== "admin") {
+          query = query.eq("user_id", profile.id);
+        }
 
-    setMaterials(data || []);
-    setMenuLoading(false);
-  }
+        const { data, error } = await query;
+
+        if (error) {
+          console.error(error);
+          alert("Gagal memuat file tugas admin: " + error.message);
+          setMenuLoading(false);
+          return;
+        }
+
+        setMaterials(data || []);
+        setMenuLoading(false);
+}
 
   async function handleRegister(e) {
     e.preventDefault();
@@ -567,7 +577,7 @@ function App() {
     await loadTasks(profile);
   }
 
-  async function addScheduleByAdmin(e) {
+    async function addScheduleByAdmin(e) {
     e.preventDefault();
 
     if (profile?.role !== "admin") {
@@ -575,17 +585,15 @@ function App() {
       return;
     }
 
-    const mahasiswaList = students.filter((student) => student.role === "mahasiswa");
-
-    if (mahasiswaList.length === 0) {
-      alert("Belum ada mahasiswa yang terdaftar.");
+    if (!targetScheduleStudentId) {
+      alert("Pilih mahasiswa tujuan terlebih dahulu.");
       return;
     }
 
     const course = getCourse(scheduleKode);
 
-    const dataJadwal = mahasiswaList.map((student) => ({
-      user_id: student.id,
+    const dataJadwal = {
+      user_id: targetScheduleStudentId,
       kode: course.kode,
       mata_kuliah: course.nama,
       sks: course.sks,
@@ -595,7 +603,7 @@ function App() {
       ruangan: scheduleRuangan,
       dosen: scheduleDosen,
       catatan: scheduleCatatan,
-    }));
+    };
 
     const { error } = await supabase.from("schedules").insert(dataJadwal);
 
@@ -604,8 +612,9 @@ function App() {
       return;
     }
 
-    alert("Jadwal kuliah berhasil dikirim ke semua mahasiswa.");
+    alert("Jadwal kuliah berhasil dikirim ke mahasiswa yang dipilih.");
 
+    setTargetScheduleStudentId("");
     setScheduleKode(daftarMataKuliahAwal[0].kode);
     setScheduleHari("Senin");
     setScheduleMulai("08:00");
@@ -614,7 +623,7 @@ function App() {
     setScheduleDosen("");
     setScheduleCatatan("");
 
-    await loadSchedules(profile);
+    await loadData(profile);
   }
 
   async function deleteSchedule(id) {
@@ -650,6 +659,15 @@ function App() {
     }
 
     if (!materialFile) {
+      alert("Pilih Mahasiswa tujuan terlebih dahulu.");
+      return;
+    }
+      if (!materialTitle.trim()) {
+      alert("Judul file tugas harus diisi.");
+      return;
+    }
+
+    if (!materialFile) {
       alert("Pilih file atau foto tugas terlebih dahulu.");
       return;
     }
@@ -671,6 +689,7 @@ function App() {
       .getPublicUrl(filePath);
 
     const { error: insertError } = await supabase.from("materials").insert({
+      user_id: targetMaterialStudentId,
       title: materialTitle,
       description: materialDescription,
       file_name: materialFile.name,
@@ -684,8 +703,9 @@ function App() {
       return;
     }
 
-    alert("File tugas berhasil dikirim ke mahasiswa.");
+    alert("File/PDF tugas berhasil dikirim ke mahasiswa yg dipilih.");
 
+    setTargetMaterialStudentId("");
     setMaterialTitle("");
     setMaterialDescription("");
     setMaterialFile(null);
@@ -1110,6 +1130,19 @@ function App() {
               <div className="sectionTitle"><CalendarDays size={22} /><h2>Kirim Jadwal Kuliah ke Semua Mahasiswa</h2></div>
               <p className="hint">Jadwal hanya bisa dibuat oleh admin dan akan dikirim otomatis ke semua mahasiswa yang terdaftar.</p>
               <form onSubmit={addScheduleByAdmin} className="formGrid">
+                <select
+                value={targetScheduleStudentId}
+                onChange={(e) => setTargetScheduleStudentId(e.target.value)}
+              >
+                <option value="">Pilih mahasiswa tujuan</option>
+                {students
+                  .filter((student) => student.role === "mahasiswa")
+                  .map((student) => (
+                    <option key={student.id} value={student.id}>
+                      {student.nama} - {student.nim} - {student.email}
+                    </option>
+                  ))}
+              </select>
                 <select value={scheduleKode} onChange={(e) => setScheduleKode(e.target.value)}>
                   {daftarMataKuliahAwal.map((mk) => <option key={mk.kode} value={mk.kode}>{mk.nama}</option>)}
                 </select>
@@ -1143,6 +1176,19 @@ function App() {
               <div className="sectionTitle"><Upload size={22} /><h2>Kirim File / Foto Tugas</h2></div>
               <p className="hint">File yang dikirim admin akan tampil di akun mahasiswa dan bisa diunduh.</p>
               <form onSubmit={uploadMaterialByAdmin} className="formGrid">
+                <select
+                value={targetMaterialStudentId}
+                onChange={(e) => setTargetMaterialStudentId(e.target.value)}
+              >
+                <option value="">Pilih mahasiswa tujuan</option>
+                {students
+                  .filter((student) => student.role === "mahasiswa")
+                  .map((student) => (
+                    <option key={student.id} value={student.id}>
+                      {student.nama} - {student.nim} - {student.email}
+                    </option>
+                  ))}
+              </select>
                 <input type="text" placeholder="Judul file tugas" value={materialTitle} onChange={(e) => setMaterialTitle(e.target.value)} />
                 <textarea placeholder="Deskripsi tugas" value={materialDescription} onChange={(e) => setMaterialDescription(e.target.value)} />
                 <label className="uploadBox">
