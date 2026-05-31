@@ -626,26 +626,26 @@ function App() {
     await loadData(profile);
   }
 
-  async function deleteSchedule(id) {
-    if (profile?.role !== "admin") {
-      alert("Hanya admin yang bisa menghapus jadwal.");
-      return;
+    async function deleteSchedule(id) {
+      if (profile?.role !== "admin") {
+        alert("Hanya admin yang bisa menghapus jadwal.");
+        return;
+      }
+
+      const ok = confirm("Yakin ingin menghapus jadwal ini?");
+      if (!ok) return;
+
+      const { error } = await supabase.from("schedules").delete().eq("id", id);
+
+      if (error) {
+        alert("Gagal menghapus jadwal: " + error.message);
+        return;
+      }
+
+      await loadSchedules(profile);
     }
 
-    const ok = confirm("Yakin ingin menghapus jadwal ini?");
-    if (!ok) return;
-
-    const { error } = await supabase.from("schedules").delete().eq("id", id);
-
-    if (error) {
-      alert("Gagal menghapus jadwal: " + error.message);
-      return;
-    }
-
-    await loadSchedules(profile);
-  }
-
-  async function uploadMaterialByAdmin(e) {
+    async function uploadMaterialByAdmin(e) {
     e.preventDefault();
 
     if (profile?.role !== "admin") {
@@ -653,16 +653,12 @@ function App() {
       return;
     }
 
-    if (!materialTitle.trim()) {
-      alert("Judul file tugas harus diisi.");
+    if (!targetMaterialStudentId) {
+      alert("Pilih mahasiswa tujuan terlebih dahulu.");
       return;
     }
 
-    if (!materialFile) {
-      alert("Pilih Mahasiswa tujuan terlebih dahulu.");
-      return;
-    }
-      if (!materialTitle.trim()) {
+    if (!materialTitle.trim()) {
       alert("Judul file tugas harus diisi.");
       return;
     }
@@ -673,7 +669,7 @@ function App() {
     }
 
     const safeName = materialFile.name.replace(/\s+/g, "-").toLowerCase();
-    const filePath = `admin-files/${Date.now()}-${safeName}`;
+    const filePath = `admin-files/${targetMaterialStudentId}/${Date.now()}-${safeName}`;
 
     const { error: uploadError } = await supabase.storage
       .from("task-files")
@@ -703,7 +699,7 @@ function App() {
       return;
     }
 
-    alert("File/PDF tugas berhasil dikirim ke mahasiswa yg dipilih.");
+    alert("File/PDF tugas berhasil dikirim ke mahasiswa yang dipilih.");
 
     setTargetMaterialStudentId("");
     setMaterialTitle("");
@@ -712,7 +708,6 @@ function App() {
 
     await loadMaterials();
   }
-
   async function deleteMaterial(id) {
     if (profile?.role !== "admin") {
       alert("Hanya admin yang bisa menghapus file tugas.");
