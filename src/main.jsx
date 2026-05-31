@@ -1016,24 +1016,66 @@ function App() {
   }
 
   async function aktifkanNotifikasi() {
-    if (!profile) return;
+  if (!profile) return;
 
-    if (!("serviceWorker" in navigator)) {
-      alert("Browser tidak mendukung Service Worker.");
-      return;
+  if (!("serviceWorker" in navigator)) {
+    alert("Browser tidak mendukung Service Worker.");
+    return;
+  }
+
+  if (!("PushManager" in window)) {
+    alert("Browser tidak mendukung Push Notification.");
+    return;
+  }
+
+  if (!import.meta.env.VITE_VAPID_PUBLIC_KEY) {
+    alert("VITE_VAPID_PUBLIC_KEY belum diisi di Vercel atau .env.");
+    return;
+  }
+
+  const permission = await Notification.requestPermission();
+
+  if (permission !== "granted") {
+    alert("Izin notifikasi ditolak.");
+    return;
+  }
+
+  const registration = await navigator.serviceWorker.register("/service-worker.js");
+
+  const existingSubscription = await registration.pushManager.getSubscription();
+
+  if (existingSubscription) {
+    await existingSubscription.unsubscribe();
+  }
+
+  const subscription = await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(
+      import.meta.env.VITE_VAPID_PUBLIC_KEY
+    ),
+  });
+
+  const subJson = subscription.toJSON();
+
+  const { error } = await supabase.from("push_subscriptions").upsert(
+    {
+      user_id: profile.id,
+      endpoint: subJson.endpoint,
+      p256dh: subJson.keys.p256dh,
+      auth: subJson.keys.auth,
+    },
+    {
+      onConflict: "endpoint",
     }
+  );
 
-    if (!("PushManager" in window)) {
-      alert("Browser tidak mendukung Push Notification.");
-      return;
-    }
+  if (error) {
+    alert("Gagal menyimpan notifikasi: " + error.message);
+    return;
+  }
 
-    const permission = await Notification.requestPermission();
-
-    if (permission !== "granted") {
-      alert("Izin notifikasi ditolak.");
-      return;
-    }
+  alert("Notifikasi berhasil diaktifkan.");
+}
 
     const registration = await navigator.serviceWorker.register("/service-worker.js");
 
@@ -1389,16 +1431,22 @@ function App() {
         </>
       )}
           <div className="bottomActions">
-        <button onClick={exportPdf}>
-          <Download size={17} />
-          PDF
-        </button>
+          {profile.role === "mahasiswa" && (
+            <button onClick={aktifkanNotifikasi}>
+              🔔 Aktifkan Notifikasi
+            </button>
+          )}
 
-        <button onClick={logout}>
-          <LogOut size={17} />
-          Logout
-        </button>
-      </div>
+          <button onClick={exportPdf}>
+            <Download size={17} />
+            PDF
+          </button>
+
+          <button onClick={logout}>
+            <LogOut size={17} />
+            Logout
+          </button>
+        </div>
 
       <footer className="footerCredit">
         di buat pada 30-05-2026 if rpl 6-a jusri
