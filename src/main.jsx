@@ -92,7 +92,8 @@ function App() {
 
   const [search, setSearch] = useState("");
   const [activeMenu, setActiveMenu] = useState("tugas");
-
+  const [isUploadingMaterial, setIsUploadingMaterial] = useState(false);
+ 
   useEffect(() => {
     initAuth();
 
@@ -1225,14 +1226,35 @@ function App() {
                   ))}
               </select>
 
-                <input type="text" placeholder="Judul file tugas" value={materialTitle} onChange={(e) => setMaterialTitle(e.target.value)} />
-                <textarea placeholder="Deskripsi tugas" value={materialDescription} onChange={(e) => setMaterialDescription(e.target.value)} />
-                <label className="uploadBox">
-                  <Upload size={18} />
-                  {materialFile ? materialFile.name : "Upload file/foto tugas"}
-                  <input type="file" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.zip,.rar" onChange={(e) => setMaterialFile(e.target.files?.[0] || null)} hidden />
-                </label>
-                <button type="submit"><Save size={17} /> Kirim File Tugas</button>
+               <input
+              type="text"
+              placeholder="Judul file tugas"
+              value={materialTitle}
+              onChange={(e) => setMaterialTitle(e.target.value)}
+            />
+
+            <textarea
+              placeholder="Deskripsi tugas"
+              value={materialDescription}
+              onChange={(e) => setMaterialDescription(e.target.value)}
+            />
+
+            <label className="uploadBox">
+              <Upload size={18} />
+              {materialFile ? materialFile.name : "Upload file/foto tugas"}
+              <input
+                type="file"
+                accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.zip,.rar"
+                onChange={(e) => setMaterialFile(e.target.files?.[0] || null)}
+                hidden
+              />
+            </label>
+
+            <button type="submit" disabled={isUploadingMaterial}>
+              <Save size={17} />
+              {isUploadingMaterial ? "Sedang Mengirim..." : "Kirim File Tugas"}
+            </button>
+
               </form>
             </section>
           )}
