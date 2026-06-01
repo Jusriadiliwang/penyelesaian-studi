@@ -339,6 +339,24 @@ function App() {
     setRegEmail("");
     setRegPassword("");
   }
+ 
+    async function resetPassword() {
+    if (!loginEmail) {
+      alert("Masukkan email terlebih dahulu di kolom email.");
+      return;
+    }
+
+    const { error } = await supabase.auth.resetPasswordForEmail(loginEmail, {
+      redirectTo: "https://penyelesaian-studi-3goa.vercel.app",
+    });
+
+    if (error) {
+      alert("Gagal mengirim reset password: " + error.message);
+      return;
+    }
+
+    alert("Link reset password sudah dikirim ke email.");
+  }
 
   async function handleLogin(e) {
     e.preventDefault();
@@ -1204,6 +1222,9 @@ async function aktifkanNotifikasi() {
               <input type="email" placeholder="Email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} />
               <input type="password" placeholder="Password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
               <button type="submit"><LogIn size={17} /> Login</button>
+              <button type="button" className="forgotBtn" onClick={resetPassword}>
+                Lupa Password?
+              </button>
             </form>
           )}
 
