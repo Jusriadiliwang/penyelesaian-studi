@@ -319,7 +319,7 @@ function App() {
       email: regEmail,
       password: regPassword,
       options: {
-        emailRedirectTo: window.location.origin,
+        emailRedirectTo: "https://penyelesaian-studi-3goa.vercel.app",
         data: {
           nama: regNama,
           nim: regNim,
