@@ -1525,6 +1525,27 @@ async function aktifkanNotifikasi() {
   );
 }
 
+async function downloadFileFromUrl(url, filename = "file-tugas") {
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+
+    const blobUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = blobUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+
+    link.remove();
+    window.URL.revokeObjectURL(blobUrl);
+  } catch (error) {
+    console.error(error);
+    alert("Gagal mengunduh file.");
+  }
+}
+
 function ProgressBar({ label, value, max, color, suffix }) {
   const width = max === 0 ? 0 : Math.min(100, Math.round((value / max) * 100));
 
@@ -1572,13 +1593,25 @@ function TaskList({ title, data, profile, getStudentName, onStatus, onDelete, on
 
               {showImage(item) && <img src={item.file_url || item.foto} alt="Bukti tugas" className="proofImage" loading="lazy" />}
 
-              {item.file_url && (
-                <div className="fileBox">
-                  <p><b>File:</b> {item.file_name || "File tugas"}</p>
-                  <p><b>Tipe:</b> {item.file_type || "-"}</p>
-                  <a className="downloadBtn" href={item.file_url} target="_blank" rel="noreferrer" download><Download size={16} /> Download File</a>
-                </div>
-              )}
+              {(item.file_url || item.foto) && (
+              <div className="fileBox">
+                <p><b>File:</b> {item.file_name || "Foto tugas"}</p>
+                <p><b>Tipe:</b> {item.file_type || "-"}</p>
+
+                <button
+                  type="button"
+                  className="downloadBtn"
+                  onClick={() =>
+                    downloadFileFromUrl(
+                      item.file_url || item.foto,
+                      item.file_name || "foto-tugas.png"
+                    )
+                  }
+                >
+                  <Download size={16} /> Download File
+                </button>
+              </div>
+            )}
 
               <div className="actionRow">
                 {profile.role === "mahasiswa" && (

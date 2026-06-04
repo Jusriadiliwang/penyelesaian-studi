@@ -1190,3 +1190,7 @@ textarea:focus {
   font-weight: 800;
   cursor: pointer;
 }
+.downloadBtn {
+  border: none;
+  text-decoration: none;
+}
